@@ -19,7 +19,8 @@ namespace MinimalGolf
 
         [Header("Cup Assist")]
         [SerializeField] private float assistRadius = 1.15f;
-        [SerializeField] private float captureRadius = 0.48f;
+        [SerializeField, Tooltip("Ball-center distance at which the final cup animation begins. Keep this within the dark cup so the ball is fully supported visually.")]
+        private float captureRadius = 0.012f;
         [SerializeField] private float maximumAssistedSpeed = 3.5f;
         [SerializeField] private float maximumCaptureSpeed = 2.5f;
         [SerializeField] private float minimumPullAcceleration = 1.25f;
@@ -46,6 +47,7 @@ namespace MinimalGolf
         private GUIStyle centeredStyle;
         private GUIStyle hugeStyle;
         private GUIStyle eyebrowStyle;
+        private GUIStyle eyebrowRightStyle;
         private GUIStyle statLabelStyle;
         private GUIStyle statValueStyle;
         private GUIStyle darkCenteredStyle;
@@ -58,7 +60,7 @@ namespace MinimalGolf
         private static readonly Color PanelSoftColor = new Color(0.055f, 0.14f, 0.19f, 0.72f);
         private static readonly Color PaleText = new Color32(0xFA, 0xF1, 0xD2, 0xFF);
         private static readonly Color Accent = new Color32(0xA9, 0xDB, 0xE8, 0xFF);
-        private static readonly Color Coral = new Color32(0xE9, 0x84, 0x68, 0xFF);
+        private static readonly Color OrangeAccent = new Color32(0xE1, 0x82, 0x2F, 0xFF);
         private static readonly Color Seafoam = new Color32(0x8B, 0xCB, 0xA8, 0xFF);
         private static readonly Color Ink = new Color32(0x16, 0x35, 0x3D, 0xFF);
         private static readonly Color WarmCream = new Color32(0xFF, 0xED, 0xBF, 0xFF);
@@ -250,7 +252,7 @@ namespace MinimalGolf
 
             Color low = new Color32(0x89, 0xE0, 0xB3, 0xFF);
             Color middle = Gold;
-            Color high = new Color32(0xF2, 0x77, 0x67, 0xFF);
+            Color high = OrangeAccent;
             Color color = shotPower < 0.55f
                 ? Color.Lerp(low, middle, shotPower / 0.55f)
                 : Color.Lerp(middle, high, (shotPower - 0.55f) / 0.45f);
@@ -319,6 +321,7 @@ namespace MinimalGolf
 
             Rigidbody ball = currentLevel.ball;
             ball.isKinematic = true;
+            ball.interpolation = RigidbodyInterpolation.Interpolate;
             ball.transform.SetPositionAndRotation(currentLevel.ballSpawn.position, currentLevel.ballSpawn.rotation);
             ball.transform.localScale = Vector3.one;
             Physics.SyncTransforms();
@@ -351,6 +354,8 @@ namespace MinimalGolf
             dragging = false;
             aimingLine.enabled = false;
             Rigidbody ball = currentLevel.ball;
+            RigidbodyInterpolation previousInterpolation = ball.interpolation;
+            ball.interpolation = RigidbodyInterpolation.None;
             ball.linearVelocity = Vector3.zero;
             ball.angularVelocity = Vector3.zero;
             ball.isKinematic = true;
@@ -358,17 +363,41 @@ namespace MinimalGolf
 
             Vector3 startPosition = ball.position;
             Vector3 startScale = ball.transform.localScale;
-            Vector3 targetPosition = currentLevel.holeCenter.position + Vector3.down * 0.32f;
-            const float duration = 0.62f;
+            Vector3 holePosition = currentLevel.holeCenter.position;
+            Vector3 centeredPosition = new Vector3(holePosition.x, startPosition.y - 0.055f, holePosition.z);
+            Vector3 centeredScale = startScale * 0.88f;
+
+            // Capture begins only once the ball fits inside the dark cup. Blend a small drop
+            // into the last bit of centering so it reads as falling, not being placed.
+            const float centeringDuration = 0.10f;
             float elapsed = 0f;
-            while (elapsed < duration)
+            while (elapsed < centeringDuration)
             {
                 elapsed += Time.deltaTime;
-                float t = Mathf.SmoothStep(0f, 1f, elapsed / duration);
-                ball.position = Vector3.Lerp(startPosition, targetPosition, t);
-                ball.transform.localScale = Vector3.Lerp(startScale, startScale * 0.08f, t);
+                float t = Mathf.SmoothStep(0f, 1f, elapsed / centeringDuration);
+                ball.position = Vector3.Lerp(startPosition, centeredPosition, t);
+                ball.transform.localScale = Vector3.Lerp(startScale, centeredScale, t);
                 yield return null;
             }
+
+            ball.position = centeredPosition;
+            ball.transform.localScale = centeredScale;
+
+            Vector3 targetPosition = holePosition + Vector3.down * 0.32f;
+            const float sinkingDuration = 0.52f;
+            elapsed = 0f;
+            while (elapsed < sinkingDuration)
+            {
+                elapsed += Time.deltaTime;
+                float t = Mathf.SmoothStep(0f, 1f, elapsed / sinkingDuration);
+                ball.position = Vector3.Lerp(centeredPosition, targetPosition, t);
+                ball.transform.localScale = Vector3.Lerp(centeredScale, startScale * 0.08f, t);
+                yield return null;
+            }
+
+            ball.position = targetPosition;
+            ball.transform.localScale = startScale * 0.08f;
+            ball.interpolation = previousInterpolation;
 
             levelComplete = true;
             string result = levelStrokes <= currentLevel.par ? "UNDER PAR!" : levelStrokes == currentLevel.par ? "ON PAR!" : "+" + (levelStrokes - currentLevel.par) + " OVER PAR";
@@ -447,6 +476,7 @@ namespace MinimalGolf
             centeredStyle = CreateLabelStyle(font, 11, FontStyle.Normal, PaleText, TextAnchor.MiddleCenter);
             hugeStyle = CreateLabelStyle(font, 38, FontStyle.Bold, PaleText, TextAnchor.MiddleCenter);
             eyebrowStyle = CreateLabelStyle(font, 9, FontStyle.Bold, new Color(PaleText.r, PaleText.g, PaleText.b, 0.62f), TextAnchor.MiddleLeft);
+            eyebrowRightStyle = new GUIStyle(eyebrowStyle) { alignment = TextAnchor.MiddleRight };
             statLabelStyle = CreateLabelStyle(font, 8, FontStyle.Bold, new Color(PaleText.r, PaleText.g, PaleText.b, 0.58f), TextAnchor.MiddleCenter);
             statValueStyle = CreateLabelStyle(font, 21, FontStyle.Bold, PaleText, TextAnchor.MiddleCenter);
             darkCenteredStyle = CreateLabelStyle(font, 11, FontStyle.Bold, Ink, TextAnchor.MiddleCenter);
@@ -460,7 +490,7 @@ namespace MinimalGolf
         private void OnGUI()
         {
             EnsureStyles();
-            float scale = Mathf.Clamp(Screen.height / 600f, 1.2f, 1.8f);
+            float scale = Mathf.Clamp(Screen.height / 500f, 1.35f, 2.1f);
             Matrix4x4 previousMatrix = GUI.matrix;
             Color previousColor = GUI.color;
             GUI.matrix = Matrix4x4.Scale(new Vector3(scale, scale, 1f));
@@ -502,12 +532,16 @@ namespace MinimalGolf
 
         private void DrawIdentityCard()
         {
-            Rect card = new Rect(18, 16, 250, 78);
+            Rect card = new Rect(18, 16, 286, 78);
             DrawPanel(card, PanelColor);
-            DrawRect(new Rect(card.x + 9, card.y + 12, 5, 54), Coral);
-            GUI.Label(new Rect(card.x + 27, card.y + 10, 205, 29), "MINIMAL GOLF", titleStyle);
-            GUI.Label(new Rect(card.x + 28, card.y + 39, 205, 13), "CURRENT COURSE", eyebrowStyle);
-            GUI.Label(new Rect(card.x + 28, card.y + 52, 205, 18), currentLevel.levelName, headingStyle);
+            DrawRect(new Rect(card.x + 9, card.y + 12, 5, 54), OrangeAccent);
+            GUI.Label(new Rect(card.x + 27, card.y + 10, 241, 29), "MINIMAL GOLF", titleStyle);
+            GUI.Label(new Rect(card.x + 28, card.y + 39, 128, 13), "CURRENT COURSE", eyebrowStyle);
+            GUI.Label(
+                new Rect(card.x + 148, card.y + 39, 120, 13),
+                "LEVEL " + (currentLevelIndex + 1) + " / " + levels.Length,
+                eyebrowRightStyle);
+            GUI.Label(new Rect(card.x + 28, card.y + 52, 240, 18), currentLevel.levelName, headingStyle);
         }
 
         private void DrawProgressCard(float width)
@@ -516,8 +550,8 @@ namespace MinimalGolf
             DrawPanel(card, PanelSoftColor);
             GUI.Label(new Rect(card.x, card.y + 3, card.width, 14), "COURSE PROGRESS", statLabelStyle);
 
-            const float blockWidth = 24f;
-            const float gap = 7f;
+            float gap = levels.Length > 6 ? 4f : 7f;
+            float blockWidth = Mathf.Min(24f, (card.width - 30f - gap * Mathf.Max(0, levels.Length - 1)) / levels.Length);
             float totalWidth = levels.Length * blockWidth + Mathf.Max(0, levels.Length - 1) * gap;
             float startX = card.x + (card.width - totalWidth) * 0.5f;
             for (int i = 0; i < levels.Length; i++)
@@ -527,7 +561,7 @@ namespace MinimalGolf
                 Color color = i < currentLevelIndex
                     ? Seafoam
                     : current
-                        ? Coral
+                        ? OrangeAccent
                         : new Color(PaleText.r, PaleText.g, PaleText.b, 0.18f);
                 DrawRect(new Rect(startX + i * (blockWidth + gap), card.y + 29f - blockHeight * 0.5f, blockWidth, blockHeight), color);
             }
@@ -535,14 +569,12 @@ namespace MinimalGolf
 
         private void DrawStatsCard(float width)
         {
-            Rect card = new Rect(width - 304, 16, 286, 78);
+            Rect card = new Rect(width - 210, 16, 192, 78);
             DrawPanel(card, PanelColor);
             const float cellWidth = 88f;
-            DrawStat(new Rect(card.x + 7, card.y + 7, cellWidth, 64), "STROKES", levelStrokes.ToString(), Coral);
+            DrawStat(new Rect(card.x + 7, card.y + 7, cellWidth, 64), "STROKES", levelStrokes.ToString(), OrangeAccent);
             DrawRect(new Rect(card.x + 99, card.y + 15, 1, 48), new Color(PaleText.r, PaleText.g, PaleText.b, 0.13f));
             DrawStat(new Rect(card.x + 101, card.y + 7, cellWidth, 64), "PAR", currentLevel.par.ToString(), Gold);
-            DrawRect(new Rect(card.x + 193, card.y + 15, 1, 48), new Color(PaleText.r, PaleText.g, PaleText.b, 0.13f));
-            DrawStat(new Rect(card.x + 195, card.y + 7, cellWidth, 64), "HOLE", (currentLevelIndex + 1) + " / " + levels.Length, Accent);
         }
 
         private void DrawStat(Rect rect, string label, string value, Color valueColor)
@@ -570,7 +602,7 @@ namespace MinimalGolf
             float segmentWidth = (available - gap * (segments - 1)) / segments;
             Color powerColor = shotPower < 0.55f
                 ? Color.Lerp(Seafoam, Gold, shotPower / 0.55f)
-                : Color.Lerp(Gold, Coral, (shotPower - 0.55f) / 0.45f);
+                : Color.Lerp(Gold, OrangeAccent, (shotPower - 0.55f) / 0.45f);
             for (int i = 0; i < segments; i++)
             {
                 bool filled = shotPower >= (i + 1f) / segments;
@@ -584,7 +616,7 @@ namespace MinimalGolf
             float alpha = Mathf.Clamp01((feedbackUntil - Time.unscaledTime) * 3.2f);
             Rect messageRect = new Rect(width * 0.5f - 190, height * 0.19f, 380, 44);
             DrawPanel(messageRect, new Color(WarmCream.r, WarmCream.g, WarmCream.b, 0.96f * alpha));
-            DrawRect(new Rect(messageRect.x + 8, messageRect.y + 8, 5, messageRect.height - 16), new Color(Coral.r, Coral.g, Coral.b, alpha));
+            DrawRect(new Rect(messageRect.x + 8, messageRect.y + 8, 5, messageRect.height - 16), new Color(OrangeAccent.r, OrangeAccent.g, OrangeAccent.b, alpha));
             Color previous = darkCenteredStyle.normal.textColor;
             darkCenteredStyle.normal.textColor = new Color(Ink.r, Ink.g, Ink.b, alpha);
             GUI.Label(new Rect(messageRect.x + 18, messageRect.y, messageRect.width - 26, messageRect.height), feedback, darkCenteredStyle);
@@ -600,9 +632,9 @@ namespace MinimalGolf
             float blockX = card.x + card.width * 0.5f - 64f;
             DrawRect(new Rect(blockX, card.y + 25, 36, 7), Seafoam);
             DrawRect(new Rect(blockX + 46, card.y + 25, 36, 7), Gold);
-            DrawRect(new Rect(blockX + 92, card.y + 25, 36, 7), Coral);
+            DrawRect(new Rect(blockX + 92, card.y + 25, 36, 7), OrangeAccent);
             GUI.Label(new Rect(card.x + 20, card.y + 48, card.width - 40, 54), "COURSE COMPLETE", hugeStyle);
-            GUI.Label(new Rect(card.x + 20, card.y + 112, card.width - 40, 18), "FIVE SMALL COURSES • ONE GRAND SCORE", statLabelStyle);
+            GUI.Label(new Rect(card.x + 20, card.y + 112, card.width - 40, 18), "EIGHT SMALL COURSES • ONE GRAND SCORE", statLabelStyle);
 
             Rect score = new Rect(card.x + 142, card.y + 146, card.width - 284, 58);
             DrawPanel(score, WarmCream);
@@ -614,7 +646,7 @@ namespace MinimalGolf
             GUI.Label(new Rect(score.x, score.y + 32, score.width, 17), "TOTAL STROKES", darkLabelStyle);
 
             Rect prompt = new Rect(card.x + 88, card.y + 228, card.width - 176, 32);
-            DrawPanel(prompt, Coral);
+            DrawPanel(prompt, OrangeAccent);
             GUI.Label(prompt, "ENTER OR SPACE  •  PLAY AGAIN", darkCenteredStyle);
         }
 

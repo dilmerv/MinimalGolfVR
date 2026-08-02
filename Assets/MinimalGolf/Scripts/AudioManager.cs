@@ -4,6 +4,7 @@ namespace MinimalGolf
 {
     [DisallowMultipleComponent]
     [RequireComponent(typeof(AudioSource))]
+    [RequireComponent(typeof(AudioListener))]
     public sealed class AudioManager : MonoBehaviour
     {
         public static AudioManager Instance { get; private set; }

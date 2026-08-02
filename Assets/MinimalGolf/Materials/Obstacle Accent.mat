@@ -39,9 +39,9 @@ Material:
     - _ShadowThreshold: 0.48
     - _UseVertexColor: 0
     m_Colors:
-    - _BaseColor: {r: 0.9098039, g: 0.48235294, b: 0.38431373, a: 1}
+    - _BaseColor: {r: 0.8509804, g: 0.47843137, b: 0.15686275, a: 1}
     - _OutlineColor: {r: 0.08627451, g: 0.23529412, b: 0.21176471, a: 1}
     - _RimColor: {r: 0.7411765, g: 0.92156863, b: 1, a: 1}
-    - _ShadeColor: {r: 0.5803922, g: 0.3372549, b: 0.30980393, a: 1}
+    - _ShadeColor: {r: 0.5019608, g: 0.31764707, b: 0.16470589, a: 1}
   m_BuildTextureStacks: []
   m_AllowLocking: 1

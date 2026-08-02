@@ -10,6 +10,12 @@ namespace MinimalGolf
         [SerializeField] private float minimumImpact = 0.35f;
         [SerializeField] private float fullImpact = 7.5f;
 
+        [Header("Shake Amount")]
+        [SerializeField, Min(0f), Tooltip("Camera offset used for the smallest qualifying impact.")]
+        private float minimumAmplitude = 0.0025f;
+        [SerializeField, Min(0f), Tooltip("Maximum camera offset produced at or above Full Impact.")]
+        private float maximumAmplitude = 0.047f;
+
         private Vector3 restLocalPosition;
         private float shakeStart;
         private float shakeDuration;
@@ -57,10 +63,16 @@ namespace MinimalGolf
                 return;
 
             float strength = Mathf.InverseLerp(minimumImpact, fullImpact, collisionVelocity);
-            shakeAmplitude = Mathf.Lerp(0.0025f, 0.047f, strength * strength);
+            shakeAmplitude = Mathf.Lerp(minimumAmplitude, maximumAmplitude, strength * strength);
             shakeDuration = Mathf.Lerp(0.065f, 0.16f, strength);
             shakeStart = Time.unscaledTime;
             nextAllowedImpact = Time.unscaledTime + cooldown;
+        }
+
+        private void OnValidate()
+        {
+            minimumAmplitude = Mathf.Max(0f, minimumAmplitude);
+            maximumAmplitude = Mathf.Max(minimumAmplitude, maximumAmplitude);
         }
 
         public void ResetCameraPosition()
