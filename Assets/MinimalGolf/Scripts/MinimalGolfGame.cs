@@ -67,6 +67,23 @@ namespace MinimalGolf
         private static readonly Color Gold = new Color32(0xF3, 0xC9, 0x6B, 0xFF);
 
         public int CurrentLevelIndex => currentLevelIndex;
+        public int LevelStrokes => levelStrokes;
+        public int TotalStrokes => totalStrokes;
+        public bool IsLevelComplete => levelComplete;
+        public bool IsCapturing => capturing;
+        public bool IsCourseComplete => courseComplete;
+        public MiniGolfLevel CurrentLevel => currentLevel;
+        public MiniGolfLevel[] AllLevels => levels;
+
+        public bool GetUIValues(out int strokes, out int par, out string levelName, out int levelIndex, out int levelCount)
+        {
+            strokes = levelStrokes;
+            par = currentLevel != null ? currentLevel.par : 0;
+            levelName = currentLevel != null ? currentLevel.levelName : string.Empty;
+            levelIndex = currentLevelIndex;
+            levelCount = levels != null ? levels.Length : 0;
+            return currentLevel != null;
+        }
 
         private void Awake()
         {

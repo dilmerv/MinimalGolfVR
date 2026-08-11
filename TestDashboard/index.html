@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>MinimalGolf — Test Dashboard</title>
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">
+    <div class="logo">⛳</div>
+    <div>
+      <h1>MinimalGolf — Test Dashboard</h1>
+      <p class="sub">Local PlayMode runs · <code>unity command run_tests</code> or Test Runner → auto-saved to <code>TestDashboard/history.json</code></p>
+    </div>
+  </div>
+  <div class="actions">
+    <button id="refreshBtn">↻ Refresh</button>
+    <span id="liveDot" class="live">● live</span>
+  </div>
+</header>
+
+<main class="layout">
+  <aside class="runs">
+    <div class="panel-head">
+      <h2>Runs</h2>
+      <span id="runCount">0 runs</span>
+    </div>
+    <div id="runList" class="runList"></div>
+    <div class="hint">
+      <p>Website polls <code>history.json</code> every 3s. Run tests and watch here + in Game view.</p>
+      <p class="mono">Serve via: <code>python3 TestDashboard/server.py --port 8080</code> (required for delete) or <code>python3 -m http.server 8080 --directory TestDashboard</code> (view-only)</p>
+    </div>
+  </aside>
+
+  <section class="detail">
+    <div id="detailEmpty" class="empty">
+      <div class="big">Select a run →</div>
+      <p>Thumbnails live in <code>TestDashboard/thumbnails/</code> and <code>Temp/test_*.png</code></p>
+    </div>
+    <div id="detail" class="detailCard hidden"></div>
+  </section>
+</main>
+
+<footer class="foot">MinimalGolf · 8 levels · T1-T4 cover L1-L3 · green ✓ / red ✗ · history kept (50 runs)</footer>
+<script src="app.js"></script>
+</body>
+</html>

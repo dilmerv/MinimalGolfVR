@@ -1,0 +1,68 @@
+[
+  {
+    "runId": "2026-08-10T19:53:18.220691",
+    "timestamp": "2026-08-10 19:53:18",
+    "duration": 46.12,
+    "summary": {
+      "total": 4,
+      "passed": 4,
+      "failed": 0,
+      "skipped": 0,
+      "inconclusive": 0
+    },
+    "tests": [
+      {
+        "name": "T1_Pos_Level1_HoleInOne_CompletesLevelAndUIReflectsProgress",
+        "fullName": "MinimalGolfPlayModeTests.T1_Pos_Level1_HoleInOne_CompletesLevelAndUIReflectsProgress",
+        "status": "Passed",
+        "duration": 10.3013916,
+        "message": null,
+        "stackTrace": null,
+        "description": "Level 1 (THE WARM UP) \u2014 positive hole-in-one, expects completion & UI progress",
+        "thumbnail": "test_T1_final.png"
+      },
+      {
+        "name": "T2_Neg_Level1_Miss_DoesNotComplete_ButStrokesUIIncrements",
+        "fullName": "MinimalGolfPlayModeTests.T2_Neg_Level1_Miss_DoesNotComplete_ButStrokesUIIncrements",
+        "status": "Passed",
+        "duration": 5.5511173,
+        "message": null,
+        "stackTrace": null,
+        "description": "Level 1 (THE WARM UP) \u2014 negative miss into rail, expects NOT complete but strokes +1",
+        "thumbnail": "test_T2_after.png"
+      },
+      {
+        "name": "T3_Pos_Level2_Garden_ClearsGates_AndParUI",
+        "fullName": "MinimalGolfPlayModeTests.T3_Pos_Level2_Garden_ClearsGates_AndParUI",
+        "status": "Passed",
+        "duration": 23.8221527,
+        "message": null,
+        "stackTrace": null,
+        "description": "Level 2 (THE GARDEN) \u2014 positive through gates, expects completion & PAR UI",
+        "thumbnail": "test_T3_final.png"
+      },
+      {
+        "name": "T4_Neg_Level3_WindmillWay_BlockedByObstacle_LevelNotComplete",
+        "fullName": "MinimalGolfPlayModeTests.T4_Neg_Level3_WindmillWay_BlockedByObstacle_LevelNotComplete",
+        "status": "Passed",
+        "duration": 6.4203205,
+        "message": null,
+        "stackTrace": null,
+        "description": "Level 3 (WINDMILL WAY) \u2014 negative weak shot blocked by windmill, expects NOT complete",
+        "thumbnail": "test_T4_after.png"
+      }
+    ],
+    "thumbnails": [
+      "test_T3_before.png",
+      "test_T4_before.png",
+      "test_T1_final.png",
+      "test_T1_before.png",
+      "test_T1_after.png",
+      "test_T2_before.png",
+      "test_T4_after.png",
+      "test_T2_after.png",
+      "test_T3_final.png",
+      "test_T3_after.png"
+    ]
+  }
+]
