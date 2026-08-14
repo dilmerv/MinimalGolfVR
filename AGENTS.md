@@ -19,13 +19,16 @@
 - Run `unity command ...` with permission to inspect the host Unity process. Sandboxed process discovery can misclassify the live Pipeline descriptor as stale, remove it, and make the server appear unreachable.
 - If discovery fails, inspect `unity pipeline list`. A running project with the Pipeline package installed but no PID, server port, or reachable server usually indicates failed process validation or a server startup problem.
 - Prefer commands from the discovered command list instead of assuming command names or parameters.
+- Save the scene after any major Unity operations
 
 ## Required verification
 
 - After making Editor or project changes, wait until compilation and domain reloads finish and confirm `editor_status` is ready.
+- Make sure the Meta XR Simulator is activated
 - Check the Unity console for errors with `unity command get_console_logs --severity Error --limit 100`.
 - Capture the Game view through Pipeline, for example:
  `unity command screenshot --view game --output <absolute-workspace-path>.png --width 1280 --height 720`
+- Capture the Scene view through Pipeline
 - Visually inspect the captured screenshot before reporting completion.
 - Report compilation failures, console errors, screenshot failures, or unexpected visual results rather than claiming success.
 
