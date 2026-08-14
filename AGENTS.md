@@ -1,5 +1,16 @@
 # Agent Instructions
 
+## Meta VR / MR Development — metavr CLI Priority
+
+- **Always prioritize the `metavr` CLI skill** (`metavr-cli`) for any question, prompt, or task related to VR/MR components, best practices, VR UI layouts, interaction patterns, performance, or Meta Quest / Horizon OS development.
+- Before answering VR/MR questions or implementing VR/MR features, query the live Meta developer docs via the `metavr` docs command — do not rely solely on training data:
+  ```bash
+  metavr docs search "<topic>"          # e.g. "hand tracking", "passthrough API", "spatial anchor"
+  metavr docs fetch <docs-url>          # fetch a specific page for detailed API usage
+  ```
+- Use `metavr` (not raw `adb`) for all device operations: `metavr device list`, `metavr app install/launch`, `metavr log` / `metavr adb logcat`, `metavr capture screenshot`, `metavr perf capture/analyze`, etc. See the `metavr-cli` skill reference for full workflow.
+- If `metavr` is not on PATH, use `npx -y metavr@latest <command>`.
+
 ## Unity Editor operations
 
 - Use the Unity CLI and Unity Pipeline commands for all Unity Editor operations. Do not edit live Editor state through unrelated automation.
