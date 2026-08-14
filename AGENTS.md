@@ -19,7 +19,7 @@
 - Run `unity command ...` with permission to inspect the host Unity process. Sandboxed process discovery can misclassify the live Pipeline descriptor as stale, remove it, and make the server appear unreachable.
 - If discovery fails, inspect `unity pipeline list`. A running project with the Pipeline package installed but no PID, server port, or reachable server usually indicates failed process validation or a server startup problem.
 - Prefer commands from the discovered command list instead of assuming command names or parameters.
-- Save the scene after any major Unity operations
+- Save the scene after any major Unity operations by using `unity command save_scene`
 
 ## Required verification
 
