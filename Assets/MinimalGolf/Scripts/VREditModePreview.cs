@@ -5,8 +5,14 @@ using UnityEditor;
 
 namespace MinimalGolf
 {
+    // Scene references this as VRPreviewMode (guid 3beb765d9cc874e649d15892f2b02719);
+    // keep VREditModePreview as alias for backwards compat.
+    // Must run BEFORE OVRCameraRig (which has no explicit order, default 0) so that
+    // preview positions and controller model toggles are not overwritten by
+    // OVRCameraRig.EnsureGameObjectIntegrity / OVRControllerHelper.InitializeControllerModels.
+    [DefaultExecutionOrder(-10000)]
     [ExecuteAlways]
-    public class VREditModePreview : MonoBehaviour
+    public class VRPreviewMode : MonoBehaviour
     {
         private Transform centerEye;
         private Transform leftAnchor;
@@ -29,6 +35,7 @@ namespace MinimalGolf
 
         private GameObject leftControllerRoot;
         private GameObject rightControllerRoot;
+        private bool isPreviewActive;
 
 #if UNITY_EDITOR
         private void OnEnable()
@@ -37,6 +44,8 @@ namespace MinimalGolf
             CacheReferences();
             if (!Application.isPlaying)
                 ApplyPreview();
+            else
+                isPreviewActive = false;
         }
 
         private void OnDisable()
@@ -55,6 +64,7 @@ namespace MinimalGolf
         private void Update()
         {
             if (Application.isPlaying) return;
+            if (!isPreviewActive) return;
             if (centerEye != null && (centerEye.localPosition - previewCenterPos).sqrMagnitude > 0.001f)
                 ApplyPreview();
         }
@@ -87,8 +97,10 @@ namespace MinimalGolf
             }
         }
 
-        private void ApplyPreview()
+        [ContextMenu("Reapply Preview — ApplyPreview")]
+        public void ApplyPreview()
         {
+            isPreviewActive = true;
             CacheReferences();
             if (centerEye != null)
             {
@@ -112,11 +124,28 @@ namespace MinimalGolf
             ApplyControllerModelsPreview(true);
         }
 
+        // Inspector button wrapper — also used by CustomEditor button
+        [ContextMenu("Restore For Play — RestoreForPlay")]
+        public void RestoreForPlayInspector() => RestoreForPlay();
+
+        [ContextMenu("Restore For Play")]
+        public void RestoreForPlayPublic() => RestoreForPlay();
+
         private void RestoreForPlay()
         {
+            isPreviewActive = false;
+            // Revert everything to original VR positions — unconditional, as requested.
+            // Execution order (-10000) ensures this runs BEFORE OVRCameraRig.EnsureGameObjectIntegrity
+            // so OVR's later initialization can correctly drive eye at ~1.70 without fighting preview offset.
             if (centerEye != null) { centerEye.localPosition = vrCenterPos; centerEye.localRotation = vrCenterRot; }
             if (leftAnchor != null) { leftAnchor.localPosition = vrLeftPos; leftAnchor.localRotation = vrLeftRot; }
             if (rightAnchor != null) { rightAnchor.localPosition = vrRightPos; rightAnchor.localRotation = vrRightRot; }
+            // Also ensure VRCourseAnchor preview state is cleared if it was touched (currently not offset in preview, but keep symmetric)
+            if (vrAnchor != null)
+            {
+                // VRCoursePlacement will drive this in play, but ensure no leftover preview transform
+                // Keep as-is — VRCoursePlacement.Apply() in Awake will set correct (0, y, forwardDistance)
+            }
             ApplyControllerModelsPreview(false);
         }
 
@@ -125,6 +154,15 @@ namespace MinimalGolf
             void SetModels(GameObject root, bool preview, bool isLeftController)
             {
                 if (root == null) return;
+                // Restore for Play (isPreview==false) must enable ALL controllers under each parent OVRController
+                if (!preview)
+                {
+                    // Just SetActive — no OVRControllerHelper handling needed
+                    root.SetActive(true);
+                    foreach (Transform t in root.GetComponentsInChildren<Transform>(true))
+                        t.gameObject.SetActive(true);
+                    return;
+                }
                 foreach (Transform child in root.GetComponentsInChildren<Transform>(true))
                 {
                     if (child.parent != root.transform) continue;
@@ -133,16 +171,80 @@ namespace MinimalGolf
                     // Left controller should show only MetaQuestTouchPlus_Left, hide MetaQuestTouchPlus_Right
                     // Right controller should show only MetaQuestTouchPlus_Right, hide MetaQuestTouchPlus_Left
                     bool isCorrectQuest3 = isLeftController ? n == "MetaQuestTouchPlus_Left" : n == "MetaQuestTouchPlus_Right";
-                    if (preview)
-                        child.gameObject.SetActive(isCorrectQuest3);
-                    else
-                        child.gameObject.SetActive(true);
+                    child.gameObject.SetActive(isCorrectQuest3);
                 }
-                if (root != null) root.SetActive(true);
+                root.SetActive(true);
             }
             SetModels(leftControllerRoot, isPreview, true);
             SetModels(rightControllerRoot, isPreview, false);
+            // Fallback: ensure EVERY OVRControllerHelper in scene has ALL children enabled
+            // (covers case where cached left/right roots were stale, or additional helpers exist)
+            if (!isPreview)
+            {
+                // Restore for Play — enable ALL controllers under each parent OVRController
+                // Use scene-wide search so no helper is missed — just SetActive
+                var allHelpers = FindObjectsByType<OVRControllerHelper>(FindObjectsInactive.Include, FindObjectsSortMode.None);
+                foreach (var h in allHelpers)
+                {
+                    if (h == null) continue;
+                    h.gameObject.SetActive(true);
+                    foreach (Transform t in h.GetComponentsInChildren<Transform>(true))
+                        t.gameObject.SetActive(true);
+                }
+                // Also ensure the anchor helpers themselves are found via rig (older fallback kept for safety)
+                var rig = FindFirstObjectByType<OVRCameraRig>(FindObjectsInactive.Include);
+                if (rig != null)
+                {
+                    var leftH = rig.leftControllerAnchor != null ? rig.leftControllerAnchor.GetComponentInChildren<OVRControllerHelper>(true) : null;
+                    var rightH = rig.rightControllerAnchor != null ? rig.rightControllerAnchor.GetComponentInChildren<OVRControllerHelper>(true) : null;
+                    void ForceAllActive(OVRControllerHelper hh)
+                    {
+                        if (hh == null) return;
+                        hh.gameObject.SetActive(true);
+                        foreach (Transform tt in hh.GetComponentsInChildren<Transform>(true))
+                            tt.gameObject.SetActive(true);
+                    }
+                    ForceAllActive(leftH);
+                    ForceAllActive(rightH);
+                }
+            }
         }
 #endif
     }
+
+    // Backcompat alias — file is VREditModePreview.cs but scene expects VRPreviewMode
+    [DefaultExecutionOrder(-10000)]
+    public class VREditModePreview : VRPreviewMode { }
+
+#if UNITY_EDITOR
+    [CustomEditor(typeof(VRPreviewMode), true)]
+    public class VRPreviewModeEditor : Editor
+    {
+        public override void OnInspectorGUI()
+        {
+            DrawDefaultInspector();
+            var t = target as VRPreviewMode;
+            if (t == null) return;
+            EditorGUILayout.Space(8);
+            EditorGUILayout.HelpBox("Preview positions are edit-mode only. Use buttons to force reapply/restore. Execution order is -10000 so this runs before OVRCameraRig.", MessageType.Info);
+            using (new EditorGUILayout.HorizontalScope())
+            {
+                if (GUILayout.Button("Reapply Preview (ApplyPreview)"))
+                {
+                    t.ApplyPreview();
+                    EditorUtility.SetDirty(t);
+                    UnityEditor.SceneManagement.EditorSceneManager.MarkSceneDirty(t.gameObject.scene);
+                }
+                if (GUILayout.Button("Restore For Play"))
+                {
+                    // Calls the same logic that ExitingEditMode uses — unconditional revert to vr* poses
+                    var mi = typeof(VRPreviewMode).GetMethod("RestoreForPlay", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                    mi?.Invoke(t, null);
+                    EditorUtility.SetDirty(t);
+                    UnityEditor.SceneManagement.EditorSceneManager.MarkSceneDirty(t.gameObject.scene);
+                }
+            }
+        }
+    }
+#endif
 }

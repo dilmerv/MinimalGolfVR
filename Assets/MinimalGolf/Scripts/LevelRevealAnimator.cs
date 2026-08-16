@@ -170,9 +170,22 @@ namespace MinimalGolf
             if (level == null || level.ball == null)
                 return;
 
-            level.ball.linearVelocity = Vector3.zero;
-            level.ball.angularVelocity = Vector3.zero;
-            level.ball.isKinematic = false;
+            Rigidbody ball = level.ball;
+            ball.linearVelocity = Vector3.zero;
+            ball.angularVelocity = Vector3.zero;
+            ball.isKinematic = false;
+            // Re-zero after waking dynamic body and sync transforms to avoid
+            // the 1.3mm drop jitter at VR table scale (0.042) imparting lateral velocity.
+            ball.linearVelocity = Vector3.zero;
+            ball.angularVelocity = Vector3.zero;
+            Physics.SyncTransforms();
+            // Ensure the ball is truly sleeping if still within playableSpeed.
+            if (ball.linearVelocity.magnitude < 0.01f)
+            {
+                ball.linearVelocity = Vector3.zero;
+                ball.angularVelocity *= 0.1f;
+                ball.Sleep();
+            }
         }
 
         private void RestoreParts()

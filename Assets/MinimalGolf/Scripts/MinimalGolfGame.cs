@@ -265,13 +265,29 @@ namespace MinimalGolf
             Vector2 thumb = OVRInput.Get(OVRInput.Axis2D.PrimaryThumbstick, OVRInput.Controller.RTouch);
             if (thumb.sqrMagnitude < 0.25f)
                 thumb = OVRInput.Get(OVRInput.Axis2D.PrimaryThumbstick, OVRInput.Controller.LTouch);
+            // Strict deadzone to prevent drift — require intentional deflection
             if (Mathf.Abs(thumb.x) > 0.6f)
             {
                 float yaw = thumb.x * thumbstickRotationSpeed * Time.deltaTime;
-                // Rotate anchor around up in world, but keep position
+                // Rotate anchor around up in world, but keep position (Rotate does not translate)
+                Vector3 posBefore = vrCourseAnchor.position;
                 vrCourseAnchor.Rotate(Vector3.up, yaw, Space.World);
-                // Also need to sync physics if ball is kinematic? We keep ball physics stable
+                // Guard against any position drift (Rotate should not translate, but clamp just in case)
+                if ((vrCourseAnchor.position - posBefore).sqrMagnitude > 0.0005f)
+                    vrCourseAnchor.position = posBefore;
                 Physics.SyncTransforms();
+            }
+            // Hard clamp rig to origin — prevents continuous backward drift from external locomotion / tracking
+            // Fix for CenterEyeAnchor falling: previously only x/z were clamped, leaving y free to accumulate gravity drift
+            if (ovrRig != null && ovrRig.transform.localPosition.sqrMagnitude > 0.0004f)
+            {
+                ovrRig.transform.localPosition = Vector3.zero;
+            }
+            // Also ensure TrackingSpace stays at origin (OVR drives eye via localPosition, not rig translation)
+            if (ovrRig != null && ovrRig.trackingSpace != null && ovrRig.trackingSpace.localPosition.sqrMagnitude > 0.0004f)
+            {
+                ovrRig.trackingSpace.localPosition = Vector3.zero;
+                ovrRig.trackingSpace.localRotation = Quaternion.identity;
             }
         }
 
@@ -318,6 +334,8 @@ namespace MinimalGolf
                 velocity.z = 0f;
                 ball.linearVelocity = velocity;
                 ball.angularVelocity *= 0.82f;
+                if (ball.linearVelocity.magnitude < 0.02f && ball.angularVelocity.magnitude < 0.2f)
+                    ball.Sleep();
             }
         }
 
@@ -424,7 +442,7 @@ namespace MinimalGolf
             return currentLevel != null && !currentLevel.IsRevealing && !capturing && !levelComplete && currentLevel.ball.linearVelocity.magnitude <= playableSpeed;
         }
 
-        private void ResetBall(bool penalty)
+        private void ResetBall(bool penalty, bool keepKinematic = false)
         {
             StopAllCoroutines();
             capturing = false;
@@ -441,9 +459,14 @@ namespace MinimalGolf
             ball.transform.SetPositionAndRotation(currentLevel.ballSpawn.position, currentLevel.ballSpawn.rotation);
             ball.transform.localScale = Vector3.one;
             Physics.SyncTransforms();
-            ball.isKinematic = false;
             ball.linearVelocity = Vector3.zero;
             ball.angularVelocity = Vector3.zero;
+            if (!keepKinematic)
+            {
+                ball.isKinematic = false;
+                ball.linearVelocity = Vector3.zero;
+                ball.angularVelocity = Vector3.zero;
+            }
             // Haptics instead of camera shake
             OVRInput.SetControllerVibration(0.3f, 0.4f, OVRInput.Controller.LTouch);
             OVRInput.SetControllerVibration(0.3f, 0.4f, OVRInput.Controller.RTouch);
@@ -555,9 +578,25 @@ namespace MinimalGolf
             currentLevel = levels[currentLevelIndex];
             currentLevel.gameObject.SetActive(true);
             // Keep original cameraSize field for backwards compat but don't apply to VR camera
-            ResetBall(false);
+            // Keep ball kinematic through reveal - ReleaseBall() is the sole place that
+            // makes the ball dynamic, avoiding a one-frame dynamic window over the void
+            // while LevelRevealAnimator offsets the course (6m local) at VR table scale.
+            ResetBall(false, keepKinematic: true);
             Physics.SyncTransforms();
             currentLevel.revealAnimator?.PlayReveal();
+            // If no reveal (no animator or 0 parts), release immediately
+            if (currentLevel.revealAnimator == null || currentLevel.revealAnimator.PartCount == 0)
+            {
+                Rigidbody ball = currentLevel.ball;
+                if (ball != null && ball.isKinematic)
+                {
+                    ball.isKinematic = false;
+                    ball.linearVelocity = Vector3.zero;
+                    ball.angularVelocity = Vector3.zero;
+                    Physics.SyncTransforms();
+                    ball.Sleep();
+                }
+            }
             ShowFeedback("LEVEL " + (currentLevelIndex + 1) + "  •  " + currentLevel.levelName, 1.65f);
         }
 
