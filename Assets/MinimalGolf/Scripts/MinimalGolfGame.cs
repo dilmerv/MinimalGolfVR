@@ -13,8 +13,7 @@ namespace MinimalGolf
         [Header("Aiming Line")]
         public LineRenderer aimingLine;
         [Tooltip("Width of the aiming line. Applied to LineRenderer start/end width.")]
-        [Range(0, 0.2f)]
-        public float aimingLineWidth = 0.045f;
+        [Range(0f, 0.2f)] public float aimingLineWidth = 0.01f;
         [Tooltip("VR: Min length at shotPower 0 (meters world at 0.042 scale). 0.02 = 2cm start. Reduce for smaller initial line.")]
         [Range(0f, 0.5f)] public float vrAimingLineMinLength = 0.02f;
         [Tooltip("VR: Max length at shotPower 1. 0.55 = full table. Reduce for shorter max.")]
@@ -50,7 +49,7 @@ namespace MinimalGolf
         [Tooltip("Max pull distance in world meters when in VR (course is at 0.042 scale, so world pull is much smaller than legacy 3.1).")]
         public float vrMaximumDragDistance = 0.16f;
         [Tooltip("Minimum shotPower to fire (was 0.035 -> 0.108m world at 3.1). 0.045 at 0.16 = 7.2mm deadzone.")]
-        [Range(0.005f, 0.1f)] public float vrMinShotPower = 0.045f;
+        [Range(0.001f, 0.1f)] public float vrMinShotPower = 0.045f;
 
         [Header("Cup Assist")]
         [SerializeField] private float assistRadius = 0.08f;
@@ -127,24 +126,6 @@ namespace MinimalGolf
                 aimingLine.endWidth = aimingLineWidth;
             }
         }
-
-#if UNITY_EDITOR
-        private void OnValidate()
-        {
-            // Keep line visible — 0.005 is sub-pixel at 0.65m table distance. Clamp to at least 0.015.
-            if (aimingLineWidth < 0.01f) aimingLineWidth = 0.02f;
-            aimingLineWidth = Mathf.Clamp(aimingLineWidth, 0.012f, 0.2f);
-            vrMaximumDragDistance = Mathf.Clamp(vrMaximumDragDistance, 0.08f, 1.0f);
-            vrMinShotPower = Mathf.Clamp(vrMinShotPower, 0.005f, 0.1f);
-            if (aimingLine != null)
-            {
-                aimingLine.startWidth = aimingLineWidth;
-                aimingLine.endWidth = aimingLineWidth;
-                aimingLine.enabled = dragging;
-            }
-        }
-#endif
-
         private void EnsureVRRig()
         {
             if (ovrRig == null)
@@ -439,10 +420,10 @@ namespace MinimalGolf
             pull.y = 0f;
             // In VR the course is at 0.042 scale, so world pull of 0.45m = full power. Use VR-tuned distance when ovrRig exists.
             float effectiveMax = (ovrRig != null ? vrMaximumDragDistance : maximumDragDistance);
-            effectiveMax = Mathf.Max(0.2f, effectiveMax);
+            effectiveMax = Mathf.Max(0.05f, effectiveMax);
             float distance = Mathf.Min(pull.magnitude, effectiveMax);
             shotPower = Mathf.Clamp01(distance / effectiveMax);
-            aimDirection = pull.sqrMagnitude > 0.0001f ? pull.normalized : Vector3.zero;
+            aimDirection = pull.sqrMagnitude > 0.000001f ? pull.normalized : Vector3.zero;
             UpdateAimingLine();
         }
 
