@@ -15,6 +15,13 @@ namespace MinimalGolf
         [Tooltip("Width of the aiming line. Applied to LineRenderer start/end width.")]
         [Range(0, 0.2f)]
         public float aimingLineWidth = 0.045f;
+        [Tooltip("VR: Min length at shotPower 0 (meters world at 0.042 scale). 0.02 = 2cm start. Reduce for smaller initial line.")]
+        [Range(0f, 0.5f)] public float vrAimingLineMinLength = 0.02f;
+        [Tooltip("VR: Max length at shotPower 1. 0.55 = full table. Reduce for shorter max.")]
+        [Range(0f, 1f)] public float vrAimingLineMaxLength = 0.55f;
+        [Tooltip("Flat-screen fallback min/max (meters).")]
+        [Range(0f, 2f)] public float flatAimingLineMinLength = 0.35f;
+        [Range(0f, 5f)] public float flatAimingLineMaxLength = 3.2f;
 
         [Header("VR References")]
         public OVRCameraRig ovrRig;
@@ -28,8 +35,15 @@ namespace MinimalGolf
         public Vector3 vrCourseLevelsLocalScale = new Vector3(0.042f, 0.042f, 0.042f);
         public float thumbstickRotationSpeed = 30f;
 
+        [Header("Ball Prefab")]
+        [Tooltip("Prefab instantiated at ballSpawn after level reveal fully loaded. If assigned, hierarchy ball is ignored.")]
+        public Rigidbody golfBallPrefab;
+
         [Header("Shot Tuning")]
+        [Tooltip("Impulse at shotPower==1. Lower for weaker max putts.")]
         [SerializeField] private float maximumImpulse = 2.0f;
+        [Tooltip("Impulse at shotPower==min (subtle floor). Lower this for very very subtle taps.")]
+        [SerializeField] private float minimumImpulse = 0.08f;
         [SerializeField] private float maximumDragDistance = 0.35f;
         [SerializeField] private float playableSpeed = 0.10f;
         [Header("VR Tuning")]
@@ -98,32 +112,9 @@ namespace MinimalGolf
             foreach (MiniGolfLevel level in levels)
             {
                 level.CacheAuthoredState();
-                // Runtime patch for legacy scene balls that were built with old physics (mass 0.78, damping 0.72/0.82).
-                // This ensures the B+C tuning takes effect without requiring a manual rebuild.
-                if (level.ball != null)
-                {
-                    level.ball.mass = 0.45f;
-                    level.ball.linearDamping = 0.65f;
-                    level.ball.angularDamping = 0.9f;
-                    // Ensure material reference is up to date (asset file was retuned)
-                    var col = level.ball.GetComponent<SphereCollider>();
-                    if (col != null)
-                    {
-                        col.radius = 0.2f;
-                        if (col.sharedMaterial != null)
-                        {
-                            col.sharedMaterial.dynamicFriction = 0.55f;
-                            col.sharedMaterial.staticFriction = 0.65f;
-                            col.sharedMaterial.bounciness = 0.14f;
-                            col.sharedMaterial.frictionCombine = PhysicsMaterialCombine.Maximum;
-                            col.sharedMaterial.bounceCombine = PhysicsMaterialCombine.Average;
-                        }
-                    }
-                }
             }
-
-            // Clamp legacy scene's maximumImpulse (was 15 -> 7.6) to meter-correct 2.0 so pull doesn't launch off 0.042 table.
-            if (maximumImpulse > 3.0f) maximumImpulse = 2.0f;
+            // Authored hierarchy is source of truth - no runtime physics/impulse patching.
+            // Ball mass/damping/collider/material and maximumImpulse are now controlled in the Inspector/hierarchy.
 
             EnsureVRRig();
 
@@ -190,104 +181,28 @@ namespace MinimalGolf
                         Transform ts = ovrRig.trackingSpace;
                         Transform existing = ts != null ? ts.Find("VRCourseAnchor") : null;
                         if (existing != null) vrCourseAnchor = existing;
-                        else
-                        {
-                            GameObject anchorGO = new GameObject("VRCourseAnchor");
-                            // Place at world level, sibling to OVRCameraRig (not under TrackingSpace)
-                            anchorGO.transform.localPosition = vrAnchorLocalPosition;
-                            anchorGO.transform.localRotation = Quaternion.identity;
-                            anchorGO.transform.localScale = vrAnchorLocalScale;
-                            vrCourseAnchor = anchorGO.transform;
-                        }
+                        else Debug.LogWarning("[MinimalGolfGame] VRCourseAnchor not found in hierarchy - create it manually (authored hierarchy is source of truth).");
                     }
                 }
                 if (vrCourseAnchor != null)
                 {
-                    vrCourseAnchor.localPosition = vrAnchorLocalPosition;
-                    vrCourseAnchor.localScale = vrAnchorLocalScale;
-                    // Ensure VRCourseLevels exists under anchor with 1/10 scale
+                    // Authored hierarchy is source of truth - do not overwrite VRCourseAnchor pose/scale at runtime
+                    // VRCourseLevels is authored in hierarchy - do not create or overwrite scale at runtime
                     if (vrCourseLevels == null)
                         vrCourseLevels = vrCourseAnchor.Find("VRCourseLevels");
                     if (vrCourseLevels == null)
+                        Debug.LogWarning("[MinimalGolfGame] VRCourseLevels not found under VRCourseAnchor - create it manually.");
+                    // Hierarchy is source of truth - do not auto-migrate VR_UI_Root/VR_UI or overwrite vrUIAnchor
+                    if (vrUIAnchor == null) vrUIAnchor = vrCourseAnchor;
+                    else if (vrCourseAnchor != null && vrUIAnchor != vrCourseAnchor)
                     {
-                        GameObject levelsGO = new GameObject("VRCourseLevels");
-                        levelsGO.transform.SetParent(vrCourseAnchor, false);
-                        levelsGO.transform.localPosition = Vector3.zero;
-                        levelsGO.transform.localRotation = Quaternion.identity;
-                        levelsGO.transform.localScale = vrCourseLevelsLocalScale;
-                        vrCourseLevels = levelsGO.transform;
+                        // Keep authored vrUIAnchor as-is; just ensure fallback to anchor if missing
+                        if (vrUIAnchor == null) vrUIAnchor = vrCourseAnchor;
                     }
-                    else
-                    {
-                        vrCourseLevels.localScale = vrCourseLevelsLocalScale;
-                    }
-                    // Migrate legacy VR_UI that was child of VRCourseAnchor -> move to stable vrUIAnchor
-                    Transform legacyUI = vrCourseAnchor.Find("VR_UI");
-                    if (legacyUI != null)
-                    {
-                        // Ensure stable anchor exists first so we can reparent
-                        if (vrUIAnchor == null)
-                        {
-                            var uiRootGO = new GameObject("VR_UI_Root");
-                            uiRootGO.transform.localPosition = vrAnchorLocalPosition;
-                            uiRootGO.transform.localRotation = Quaternion.identity;
-                            uiRootGO.transform.localScale = vrAnchorLocalScale;
-                            // Place at scene root, sibling to VRCourseAnchor (same level)
-                            if (vrCourseAnchor.parent != null)
-                                uiRootGO.transform.SetParent(vrCourseAnchor.parent, false);
-                            vrUIAnchor = uiRootGO.transform;
-                        }
-                        legacyUI.SetParent(vrUIAnchor, true);
-                        // Keep world position stable, reset local to preserve previous VR_UI local offset if needed
-                        Debug.Log("[MinimalGolfGame] Migrated legacy VR_UI from VRCourseAnchor -> vrUIAnchor");
-                    }
-                    // Ensure stable UI anchor exists at same level as VRCourseAnchor (NOT under it — avoids rotation)
-                    if (vrUIAnchor == null)
-                    {
-                        // Try find existing root at scene root
-                        var existingRoot = GameObject.Find("VR_UI_Root");
-                        if (existingRoot != null) vrUIAnchor = existingRoot.transform;
-                        else
-                        {
-                            Transform existingUI = null;
-                            // Search for VR_UI already under a different parent (e.g., after migration)
-                            var all = FindObjectsByType<Transform>(FindObjectsInactive.Include, FindObjectsSortMode.None);
-                            foreach (var t in all) if (t.name == "VR_UI") { existingUI = t.parent; break; }
-                            if (existingUI != null) vrUIAnchor = existingUI;
-                        }
-                        if (vrUIAnchor == null)
-                        {
-                            GameObject anchorGO = new GameObject("VR_UI_Root");
-                            anchorGO.transform.localPosition = vrAnchorLocalPosition;
-                            anchorGO.transform.localRotation = Quaternion.identity;
-                            anchorGO.transform.localScale = vrAnchorLocalScale;
-                            if (vrCourseAnchor.parent != null)
-                                anchorGO.transform.SetParent(vrCourseAnchor.parent, false);
-                            vrUIAnchor = anchorGO.transform;
-                        }
-                    }
-                    else
-                    {
-                        // Keep UI anchor stable — enforce position/scale but NEVER copy rotation from course
-                        vrUIAnchor.localPosition = vrAnchorLocalPosition;
-                        vrUIAnchor.localScale = vrAnchorLocalScale;
-                    }
-                    // Ensure VR UI exists — parented to vrUIAnchor, sibling level to VRCourseLevels
-                    if (FindFirstObjectByType<VRGolfUI>(FindObjectsInactive.Include) == null)
-                    {
-                        var ui = gameObject.AddComponent<VRGolfUI>();
-                        ui.game = this;
-                        ui.vrCourseAnchor = vrCourseAnchor;
-                        ui.vrUIAnchor = vrUIAnchor;
-                        ui.uiFont = uiFont;
-                        Debug.Log("[MinimalGolfGame] Created VRGolfUI at runtime.");
-                    }
-                    else
-                    {
-                        var existingUI = FindFirstObjectByType<VRGolfUI>(FindObjectsInactive.Include);
-                        if (existingUI != null && existingUI.vrUIAnchor == null)
-                            existingUI.vrUIAnchor = vrUIAnchor;
-                    }
+                    // Do not auto-create VRGolfUI - it should be authored in the scene
+                    var existingUI2 = FindFirstObjectByType<VRGolfUI>(FindObjectsInactive.Include);
+                    if (existingUI2 != null && vrUIAnchor != null) existingUI2.vrUIAnchor = vrUIAnchor;
+                    else if (existingUI2 == null) Debug.LogWarning("[MinimalGolfGame] VRGolfUI not found in hierarchy - add it manually.");
                     // Ensure clubs on anchors - defer one frame for OVRCameraRig to init
                     StartCoroutine(EnsureClubsNextFrame());
                 }
@@ -345,12 +260,36 @@ namespace MinimalGolf
 
         private void Update()
         {
+            // Left controller Menu (Start) -> restart current level (course restart if already complete)
+            bool leftMenuDown = OVRInput.GetDown(OVRInput.Button.Start, OVRInput.Controller.LTouch)
+                             || OVRInput.GetDown(OVRInput.RawButton.Start, OVRInput.Controller.LTouch);
+#if UNITY_EDITOR
+#if ENABLE_INPUT_SYSTEM
+            if (UnityEngine.InputSystem.Keyboard.current != null)
+                leftMenuDown |= UnityEngine.InputSystem.Keyboard.current.rKey.wasPressedThisFrame;
+#elif ENABLE_LEGACY_INPUT_MANAGER
+            leftMenuDown |= Input.GetKeyDown(KeyCode.R);
+#endif
+#endif
+            if (leftMenuDown)
+            {
+                if (courseComplete) RestartCourse();
+                else if (currentLevel != null && !currentLevel.IsRevealing) RestartCurrentLevel();
+                return;
+            }
+
             if (courseComplete)
             {
                 // VR UI button handles restart, but keep keyboard fallback for editor/tests
 #if UNITY_EDITOR
+#if ENABLE_INPUT_SYSTEM
+                if (UnityEngine.InputSystem.Keyboard.current != null &&
+                    (UnityEngine.InputSystem.Keyboard.current.enterKey.wasPressedThisFrame || UnityEngine.InputSystem.Keyboard.current.spaceKey.wasPressedThisFrame))
+                    RestartCourse();
+#elif ENABLE_LEGACY_INPUT_MANAGER
                 if (Input.GetKeyDown(KeyCode.Return) || Input.GetKeyDown(KeyCode.Space))
                     RestartCourse();
+#endif
 #endif
                 if (OVRInput.GetDown(OVRInput.Button.One, OVRInput.Controller.RTouch) ||
                     OVRInput.GetDown(OVRInput.Button.One, OVRInput.Controller.LTouch))
@@ -367,6 +306,7 @@ namespace MinimalGolf
             HandleThumbstickRotation();
 
             Rigidbody ball = currentLevel.ball;
+            if (ball == null) return;
             if (!capturing && currentLevel.IsOutsideCourse(ball.position))
             {
                 ResetBall(false);
@@ -386,12 +326,32 @@ namespace MinimalGolf
             if (Mathf.Abs(thumb.x) > 0.6f)
             {
                 float yaw = thumb.x * thumbstickRotationSpeed * Time.deltaTime;
-                // Rotate levels around up in world, but keep position (Rotate does not translate)
+                // Keep ball world-stationary while rotating course — snapshot ball pose/velocities before rotating parent
+                Rigidbody ballRb = currentLevel != null ? currentLevel.ball : null;
+                Vector3 savedPos = default;
+                Quaternion savedRot = default;
+                Vector3 savedVel = default;
+                Vector3 savedAngVel = default;
+                bool hasBall = ballRb != null;
+                if (hasBall)
+                {
+                    savedPos = ballRb.position;
+                    savedRot = ballRb.rotation;
+                    savedVel = ballRb.linearVelocity;
+                    savedAngVel = ballRb.angularVelocity;
+                }
                 Vector3 posBefore = vrCourseLevels.position;
                 vrCourseLevels.Rotate(Vector3.up, yaw, Space.World);
-                // Guard against any position drift (Rotate should not translate, but clamp just in case)
                 if ((vrCourseLevels.position - posBefore).sqrMagnitude > 0.0005f)
                     vrCourseLevels.position = posBefore;
+                if (hasBall)
+                {
+                    ballRb.position = savedPos;
+                    ballRb.rotation = savedRot;
+                    ballRb.linearVelocity = savedVel;
+                    ballRb.angularVelocity = savedAngVel;
+                    Physics.SyncTransforms();
+                }
             }
             // Hard clamp rig to origin — prevents continuous backward drift from external locomotion / tracking
             // Fix for CenterEyeAnchor falling: previously only x/z were clamped, leaving y free to accumulate gravity drift
@@ -564,13 +524,12 @@ namespace MinimalGolf
             float displayLength;
             if (ovrRig != null || vrCourseLevels != null)
             {
-                // 0.02m min visible at 0.65m table distance, 0.55m max ~ full table length
-                displayLength = Mathf.Lerp(0.02f, 0.55f, shotPower);
+                displayLength = Mathf.Lerp(vrAimingLineMinLength, vrAimingLineMaxLength, shotPower);
                 if (aimDirection.sqrMagnitude < 0.0001f) displayLength = 0f;
             }
             else
             {
-                displayLength = Mathf.Lerp(0.35f, 3.2f, shotPower);
+                displayLength = Mathf.Lerp(flatAimingLineMinLength, flatAimingLineMaxLength, shotPower);
             }
             aimingLine.SetPosition(0, ballCenter);
             aimingLine.SetPosition(1, ballCenter + aimDirection * displayLength);
@@ -597,7 +556,7 @@ namespace MinimalGolf
             Rigidbody ball = currentLevel.ball;
             // Ensure dynamic and awake before AddForce — probe showed AddForce ignored when kinematic/sleeping
             // Realistic physics: use AddForce Impulse (mass-dependent) as requested
-            float impulse = Mathf.Lerp(0.25f, maximumImpulse, power);
+            float impulse = Mathf.Lerp(minimumImpulse, maximumImpulse, power);
             Debug.Log($"[MinimalGolfGame] Shot impulse {impulse:F3} power {power:F3} direction {direction}");
             ball.AddForce(direction * impulse, ForceMode.Impulse);
             // Wake again after impulse in case FixedUpdate would sleep it
@@ -611,7 +570,53 @@ namespace MinimalGolf
 
         public bool CanTakeAction()
         {
-            return currentLevel != null && !currentLevel.IsRevealing && !capturing && !levelComplete && currentLevel.ball.linearVelocity.magnitude <= playableSpeed;
+            return currentLevel != null && currentLevel.ball != null && !currentLevel.IsRevealing && !capturing && !levelComplete && currentLevel.ball.linearVelocity.magnitude <= playableSpeed;
+        }
+
+        private Rigidbody InstantiateBallAtSpawn(MiniGolfLevel level)
+        {
+            if (level == null || level.ballSpawn == null || golfBallPrefab == null) return null;
+            if (level.ball != null)
+            {
+                var old = level.ball.gameObject;
+                if (old.scene.IsValid()) Destroy(old);
+                level.ball = null;
+            }
+            // Also clean up any stray Golf Ball object left in hierarchy under PLAYER
+            var playerGroup = level.transform.Find("PLAYER");
+            if (playerGroup != null)
+            {
+                var stray = playerGroup.Find("Golf Ball");
+                if (stray != null && stray.GetComponent<Rigidbody>() == null) stray = null;
+                // stray will be destroyed with level.ball above if it was the ball; otherwise remove authored hierarchy ball
+                if (stray != null && level.ball == null)
+                {
+                    if (stray.gameObject.scene.IsValid()) Destroy(stray.gameObject);
+                }
+            }
+            // Parent to level's PLAYER (or level) so VRCourseLevels 0.042 scale applies - otherwise ball is huge (0.32 vs 0.32*0.042)
+            Transform parent = level.ballSpawn.parent != null ? level.ballSpawn.parent : level.transform;
+            Rigidbody inst = Instantiate(golfBallPrefab, level.ballSpawn.position, level.ballSpawn.rotation, parent);
+            // Keep world pose at ballSpawn
+            inst.transform.position = level.ballSpawn.position;
+            inst.transform.rotation = level.ballSpawn.rotation;
+            inst.transform.localScale = Vector3.one;
+            inst.linearVelocity = Vector3.zero;
+            inst.angularVelocity = Vector3.zero;
+            inst.isKinematic = false;
+            inst.interpolation = RigidbodyInterpolation.Interpolate;
+            level.ball = inst;
+            return inst;
+        }
+
+        private IEnumerator SpawnBallAfterReveal(MiniGolfLevel level)
+        {
+            if (level == null) yield break;
+            float delay = level.revealAnimator != null ? level.revealAnimator.TotalDuration : 0f;
+            if (delay > 0.01f) yield return new WaitForSecondsRealtime(delay);
+            else yield return null;
+            if (currentLevel != level) yield break;
+            InstantiateBallAtSpawn(level);
         }
 
         private void ResetBall(bool penalty, bool keepKinematic = false)
@@ -625,14 +630,22 @@ namespace MinimalGolf
             shotPower = 0f;
             aimDirection = Vector3.zero;
 
-            Rigidbody ball = currentLevel.ball;
-            //ball.isKinematic = true;
-            ball.interpolation = RigidbodyInterpolation.Interpolate;
-            ball.transform.SetPositionAndRotation(currentLevel.ballSpawn.position, currentLevel.ballSpawn.rotation);
-            ball.transform.localScale = Vector3.one;
-            if (!keepKinematic)
+            // Prefab mode: destroy old and instantiate at ballSpawn (Ball Reset point)
+            if (golfBallPrefab != null && currentLevel != null && currentLevel.ballSpawn != null)
             {
-                ball.isKinematic = false;
+                InstantiateBallAtSpawn(currentLevel);
+            }
+            else
+            {
+                Rigidbody ball = currentLevel.ball;
+                //ball.isKinematic = true;
+                ball.interpolation = RigidbodyInterpolation.Interpolate;
+                ball.transform.SetPositionAndRotation(currentLevel.ballSpawn.position, currentLevel.ballSpawn.rotation);
+                ball.transform.localScale = Vector3.one;
+                if (!keepKinematic)
+                {
+                    ball.isKinematic = false;
+                }
             }
             // Haptics instead of camera shake
             OVRInput.SetControllerVibration(0.3f, 0.4f, OVRInput.Controller.LTouch);
@@ -728,33 +741,60 @@ namespace MinimalGolf
 
             for (int i = 0; i < levels.Length; i++)
             {
-                levels[i].RestoreRuntimeTransform();
-                levels[i].gameObject.SetActive(i == currentLevelIndex);
+                // Keep authored physics/material - only move active level to table origin so all levels overlap at same spot
                 if (i == currentLevelIndex)
                 {
-                    // Active level at VRCourseLevels origin (hierarchy already handles 1/10 scale)
-                    if (vrCourseLevels != null)
+                    if (vrCourseLevels != null && levels[i].transform.parent != vrCourseLevels)
                         levels[i].transform.SetParent(vrCourseLevels, false);
                     levels[i].transform.localPosition = Vector3.zero;
                     levels[i].transform.localRotation = Quaternion.identity;
                 }
+                levels[i].gameObject.SetActive(i == currentLevelIndex);
             }
 
             currentLevel = levels[currentLevelIndex];
             currentLevel.gameObject.SetActive(true);
             // Keep original cameraSize field for backwards compat but don't apply to VR camera
-            // Keep ball kinematic through reveal - ReleaseBall() is the sole place that
-            // makes the ball dynamic, avoiding a one-frame dynamic window over the void
-            // while LevelRevealAnimator offsets the course (6m local) at VR table scale.
-            ResetBall(false, keepKinematic: true);
-            currentLevel.revealAnimator?.PlayReveal();
-            // If no reveal (no animator or 0 parts), release immediately
-            if (currentLevel.revealAnimator == null || currentLevel.revealAnimator.PartCount == 0)
+            if (golfBallPrefab != null)
             {
-                Rigidbody ball = currentLevel.ball;
-                if (ball != null && ball.isKinematic)
+                // Prefab mode: no hierarchy ball - instantiate after reveal fully loaded at Ball Reset point (ballSpawn)
+                if (currentLevel.ball != null && currentLevel.ball.gameObject.scene.IsValid())
                 {
-                    ball.isKinematic = false;
+                    Destroy(currentLevel.ball.gameObject);
+                    currentLevel.ball = null;
+                }
+                // Remove authored hierarchy Golf Ball if still present (first load)
+                var pg = currentLevel.transform.Find("PLAYER");
+                var stray = pg != null ? pg.Find("Golf Ball") : null;
+                if (stray != null) Destroy(stray.gameObject);
+
+                if (currentLevel.revealAnimator != null && currentLevel.revealAnimator.PartCount > 0)
+                {
+                    currentLevel.revealAnimator.PlayReveal();
+                    StartCoroutine(SpawnBallAfterReveal(currentLevel));
+                }
+                else
+                {
+                    currentLevel.revealAnimator?.PlayReveal();
+                    InstantiateBallAtSpawn(currentLevel);
+                }
+            }
+            else
+            {
+                // Legacy hierarchy ball path (golfBallPrefab not assigned)
+                // Keep ball kinematic through reveal - ReleaseBall() is the sole place that
+                // makes the ball dynamic, avoiding a one-frame dynamic window over the void
+                // while LevelRevealAnimator offsets the course (6m local) at VR table scale.
+                ResetBall(false, keepKinematic: true);
+                currentLevel.revealAnimator?.PlayReveal();
+                // If no reveal (no animator or 0 parts), release immediately
+                if (currentLevel.revealAnimator == null || currentLevel.revealAnimator.PartCount == 0)
+                {
+                    Rigidbody ball = currentLevel.ball;
+                    if (ball != null && ball.isKinematic)
+                    {
+                        ball.isKinematic = false;
+                    }
                 }
             }
             ShowFeedback("LEVEL " + (currentLevelIndex + 1) + "  •  " + currentLevel.levelName, 1.65f);
@@ -763,6 +803,14 @@ namespace MinimalGolf
         private void RestartCourse()
         {
             LoadLevel(0, true);
+        }
+
+        public void RestartCurrentLevel()
+        {
+            if (levels == null || levels.Length == 0 || currentLevel == null) return;
+            CancelAim();
+            LoadLevel(currentLevelIndex, false);
+            ShowFeedback("LEVEL RESTARTED", 1.0f);
         }
 
         public void DebugLoadLevel(int index)

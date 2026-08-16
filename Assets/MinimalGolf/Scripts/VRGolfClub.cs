@@ -91,23 +91,34 @@ namespace MinimalGolf
                 if (sphereRenderer != null)
                     sphereMaterialInstance = sphereRenderer.sharedMaterial;
                 sphereVisual.SetActive(true);
+                // Ensure ProximitySphere has trigger collider (no physical collision)
+                var existingCol = sphereVisual.GetComponent<Collider>();
+                if (existingCol == null)
+                {
+                    var sc = sphereVisual.AddComponent<SphereCollider>();
+                    sc.isTrigger = true;
+                    sc.radius = 0.5f;
+                }
+                else
+                {
+                    existingCol.isTrigger = true;
+                    if (existingCol is SphereCollider esc) esc.radius = 0.5f;
+                }
                 if (sphereRenderer == null || sphereMaterialInstance == null)
                     CreateSpherePrimitive(existing);
+                else
+                    UpdateSphereVisual(); // ensure scale matches sphereRadius
                 return;
             }
 
             GameObject go = GameObject.CreatePrimitive(PrimitiveType.Sphere);
             go.name = "ProximitySphere";
-            // Remove collider - we keep only the trigger on the parent
+            // Keep trigger on ProximitySphere itself — detect only, no physics collision
             var col = go.GetComponent<Collider>();
             if (col != null)
             {
-#if UNITY_EDITOR
-                if (!Application.isPlaying) DestroyImmediate(col);
-                else Destroy(col);
-#else
-                Destroy(col);
-#endif
+                col.isTrigger = true;
+                if (col is SphereCollider sc) sc.radius = 0.5f; // unit sphere, scaled via transform
             }
 #if UNITY_EDITOR
             if (!Application.isPlaying) UnityEditor.Undo.RegisterCreatedObjectUndo(go, "Create ProximitySphere");
