@@ -8,8 +8,13 @@ namespace MinimalGolf
         [Header("Authored Scene References")]
         public MiniGolfLevel[] levels;
         public Camera gameCamera;
-        public LineRenderer aimingLine;
         public Font uiFont;
+
+        [Header("Aiming Line")]
+        public LineRenderer aimingLine;
+        [Tooltip("Width of the aiming line. Applied to LineRenderer start/end width.")]
+        [Range(0, 0.2f)]
+        public float aimingLineWidth = 0.045f;
 
         [Header("VR References")]
         public OVRCameraRig ovrRig;
@@ -25,6 +30,11 @@ namespace MinimalGolf
         [SerializeField] private float maximumImpulse = 7.6f;
         [SerializeField] private float maximumDragDistance = 3.1f;
         [SerializeField] private float playableSpeed = 0.32f;
+        [Header("VR Tuning")]
+        [Tooltip("Max pull distance in world meters when in VR (course is at 0.042 scale, so world pull is much smaller than legacy 3.1).")]
+        public float vrMaximumDragDistance = 0.45f;
+        [Tooltip("Minimum shotPower to fire (was 0.035 -> 0.108m world at 3.1). Lowered for VR so 4cm pull fires.")]
+        [Range(0.005f, 0.05f)] public float vrMinShotPower = 0.012f;
 
         [Header("Cup Assist")]
         [SerializeField] private float assistRadius = 1.15f;
@@ -84,7 +94,34 @@ namespace MinimalGolf
                 levels = FindObjectsByType<MiniGolfLevel>(FindObjectsInactive.Include, FindObjectsSortMode.None);
 
             foreach (MiniGolfLevel level in levels)
+            {
                 level.CacheAuthoredState();
+                // Runtime patch for legacy scene balls that were built with old physics (mass 0.78, damping 0.72/0.82).
+                // This ensures the B+C tuning takes effect without requiring a manual rebuild.
+                if (level.ball != null)
+                {
+                    level.ball.mass = 0.45f;
+                    level.ball.linearDamping = 0.65f;
+                    level.ball.angularDamping = 0.9f;
+                    // Ensure material reference is up to date (asset file was retuned)
+                    var col = level.ball.GetComponent<SphereCollider>();
+                    if (col != null)
+                    {
+                        col.radius = 0.2f;
+                        if (col.sharedMaterial != null)
+                        {
+                            col.sharedMaterial.dynamicFriction = 0.55f;
+                            col.sharedMaterial.staticFriction = 0.65f;
+                            col.sharedMaterial.bounciness = 0.14f;
+                            col.sharedMaterial.frictionCombine = PhysicsMaterialCombine.Maximum;
+                            col.sharedMaterial.bounceCombine = PhysicsMaterialCombine.Average;
+                        }
+                    }
+                }
+            }
+
+            // Clamp legacy scene's maximumImpulse (was 15) to safe 7.6 so a light pull doesn't launch full course.
+            if (maximumImpulse > 8.0f) maximumImpulse = 7.6f;
 
             EnsureVRRig();
 
@@ -93,10 +130,27 @@ namespace MinimalGolf
                 aimingLine.enabled = false;
                 aimingLine.useWorldSpace = true;
                 aimingLine.positionCount = 2;
-                aimingLine.startWidth = 0.045f;
-                aimingLine.endWidth = 0.045f;
+                aimingLine.startWidth = aimingLineWidth;
+                aimingLine.endWidth = aimingLineWidth;
             }
         }
+
+#if UNITY_EDITOR
+        private void OnValidate()
+        {
+            // Keep line visible — 0.005 is sub-pixel at 0.65m table distance. Clamp to at least 0.015.
+            if (aimingLineWidth < 0.01f) aimingLineWidth = 0.02f;
+            aimingLineWidth = Mathf.Clamp(aimingLineWidth, 0.012f, 0.2f);
+            vrMaximumDragDistance = Mathf.Clamp(vrMaximumDragDistance, 0.2f, 1.0f);
+            vrMinShotPower = Mathf.Clamp(vrMinShotPower, 0.005f, 0.05f);
+            if (aimingLine != null)
+            {
+                aimingLine.startWidth = aimingLineWidth;
+                aimingLine.endWidth = aimingLineWidth;
+                aimingLine.enabled = dragging;
+            }
+        }
+#endif
 
         private void EnsureVRRig()
         {
@@ -210,6 +264,9 @@ namespace MinimalGolf
             club.controller = controller;
             club.game = this;
             club.overlapRadius = 0.11f;
+            club.sphereRadius = 0.08f;
+            club.sphereOpacity = 0.35f;
+            club.showSphere = true;
         }
 
         private void Start()
@@ -275,7 +332,6 @@ namespace MinimalGolf
                 // Guard against any position drift (Rotate should not translate, but clamp just in case)
                 if ((vrCourseAnchor.position - posBefore).sqrMagnitude > 0.0005f)
                     vrCourseAnchor.position = posBefore;
-                Physics.SyncTransforms();
             }
             // Hard clamp rig to origin — prevents continuous backward drift from external locomotion / tracking
             // Fix for CenterEyeAnchor falling: previously only x/z were clamped, leaving y free to accumulate gravity drift
@@ -296,6 +352,10 @@ namespace MinimalGolf
             if (currentLevel == null || currentLevel.ball == null || currentLevel.IsRevealing || capturing || levelComplete || courseComplete)
                 return;
 
+            // While aiming the ball is frozen kinematic — skip assist/damping entirely
+            if (dragging)
+                return;
+
             Rigidbody ball = currentLevel.ball;
             if (ball.isKinematic)
                 return;
@@ -314,12 +374,6 @@ namespace MinimalGolf
                 if (distance > 0.001f)
                     ball.AddForce(offset.normalized * acceleration, ForceMode.Acceleration);
 
-                velocity = ball.linearVelocity;
-                float damping = Mathf.Lerp(0.995f, 0.91f, closeness);
-                velocity.x *= damping;
-                velocity.z *= damping;
-                ball.linearVelocity = velocity;
-
                 if (distance <= captureRadius && horizontalSpeed <= maximumCaptureSpeed && Mathf.Abs(ball.position.y - hole.y) < 1.25f)
                 {
                     StartCoroutine(CaptureBall());
@@ -329,13 +383,6 @@ namespace MinimalGolf
 
             if (!dragging && horizontalSpeed < 0.085f)
             {
-                velocity = ball.linearVelocity;
-                velocity.x = 0f;
-                velocity.z = 0f;
-                ball.linearVelocity = velocity;
-                ball.angularVelocity *= 0.82f;
-                if (ball.linearVelocity.magnitude < 0.02f && ball.angularVelocity.magnitude < 0.2f)
-                    ball.Sleep();
             }
         }
 
@@ -354,6 +401,13 @@ namespace MinimalGolf
             shotPower = 0f;
             if (aimingLine != null) aimingLine.enabled = true;
             UpdateAimingLine();
+            // Freeze ball while aiming so controller overlap / trigger press cannot nudge it via physics.
+            // Kinematic prevents any collision response; we also zero velocities and sleep.
+            if (currentLevel != null && currentLevel.ball != null)
+            {
+                Rigidbody b = currentLevel.ball;
+                //b.isKinematic = true;
+            }
             return true;
         }
 
@@ -363,8 +417,11 @@ namespace MinimalGolf
             currentWorld.y = dragStartWorld.y;
             Vector3 pull = dragStartWorld - currentWorld;
             pull.y = 0f;
-            float distance = Mathf.Min(pull.magnitude, maximumDragDistance);
-            shotPower = Mathf.Clamp01(distance / maximumDragDistance);
+            // In VR the course is at 0.042 scale, so world pull of 0.45m = full power. Use VR-tuned distance when ovrRig exists.
+            float effectiveMax = (ovrRig != null ? vrMaximumDragDistance : maximumDragDistance);
+            effectiveMax = Mathf.Max(0.2f, effectiveMax);
+            float distance = Mathf.Min(pull.magnitude, effectiveMax);
+            shotPower = Mathf.Clamp01(distance / effectiveMax);
             aimDirection = pull.sqrMagnitude > 0.0001f ? pull.normalized : Vector3.zero;
             UpdateAimingLine();
         }
@@ -374,7 +431,18 @@ namespace MinimalGolf
             if (!dragging) return false;
             dragging = false;
             if (aimingLine != null) aimingLine.enabled = false;
-            if (shotPower < 0.035f || aimDirection.sqrMagnitude < 0.1f || !CanTakeAction())
+            float minPower = (ovrRig != null ? vrMinShotPower : 0.035f);
+            // Below-threshold pulls should not shoot but still unfreeze the ball so it can be re-aimed.
+            if (shotPower < minPower || aimDirection.sqrMagnitude < 0.001f)
+            {
+                UnfreezeBallForRetry();
+                shotPower = 0f;
+                aimDirection = Vector3.zero;
+                return false;
+            }
+            // Must still be playable (e.g., not capturing). Unfreeze first so CanTakeAction sees dynamic ball.
+            UnfreezeBallForShot();
+            if (!CanTakeAction())
             {
                 shotPower = 0f;
                 aimDirection = Vector3.zero;
@@ -386,10 +454,36 @@ namespace MinimalGolf
             return ok;
         }
 
+        private void UnfreezeBallForRetry()
+        {
+            if (currentLevel == null || currentLevel.ball == null) return;
+            Rigidbody b = currentLevel.ball;
+            if (b.isKinematic)
+            {
+                b.isKinematic = false;
+            }
+        }
+
+        private void UnfreezeBallForShot()
+        {
+            if (currentLevel == null || currentLevel.ball == null) return;
+            Rigidbody b = currentLevel.ball;
+            if (b.isKinematic)
+            {
+                b.isKinematic = false;
+            }
+        }
+
         public void CancelAim()
         {
             dragging = false;
             if (aimingLine != null) aimingLine.enabled = false;
+            // Unfreeze ball without shooting — restore to dynamic at rest
+            if (currentLevel != null && currentLevel.ball != null && currentLevel.ball.isKinematic)
+            {
+                Rigidbody b = currentLevel.ball;
+                b.isKinematic = false;
+            }
             shotPower = 0f;
             aimDirection = Vector3.zero;
         }
@@ -399,8 +493,25 @@ namespace MinimalGolf
             if (aimingLine == null || currentLevel == null)
                 return;
 
+            // Ensure line GameObject is active and visible while aiming
+            if (!aimingLine.gameObject.activeSelf) aimingLine.gameObject.SetActive(true);
+            aimingLine.enabled = true;
+            aimingLine.startWidth = aimingLineWidth;
+            aimingLine.endWidth = aimingLineWidth;
             Vector3 ballCenter = currentLevel.ball.worldCenterOfMass;
-            float displayLength = Mathf.Lerp(0.35f, 3.2f, shotPower);
+            // VR course is at 0.042 world scale (world length ~0.5m). Legacy 0.35-3.2 is 6x too large in VR.
+            // Use VR-scaled length when rig exists, keep legacy for flat-screen fallback.
+            float displayLength;
+            if (ovrRig != null || vrCourseLevels != null)
+            {
+                // 0.02m min visible at 0.65m table distance, 0.55m max ~ full table length
+                displayLength = Mathf.Lerp(0.02f, 0.55f, shotPower);
+                if (aimDirection.sqrMagnitude < 0.0001f) displayLength = 0f;
+            }
+            else
+            {
+                displayLength = Mathf.Lerp(0.35f, 3.2f, shotPower);
+            }
             aimingLine.SetPosition(0, ballCenter);
             aimingLine.SetPosition(1, ballCenter + aimDirection * displayLength);
 
@@ -421,14 +532,15 @@ namespace MinimalGolf
             if (direction.sqrMagnitude < 0.0001f) return false;
             direction.Normalize();
             power = Mathf.Clamp01(power);
-            if (power < 0.035f) return false;
+            float minPower = (ovrRig != null ? vrMinShotPower : 0.035f);
+            if (power < minPower) return false;
             Rigidbody ball = currentLevel.ball;
-            Vector3 velocity = ball.linearVelocity;
-            velocity.x = 0f;
-            velocity.z = 0f;
-            ball.linearVelocity = velocity;
-            ball.angularVelocity *= 0.15f;
-            ball.AddForce(direction * Mathf.Lerp(1.1f, maximumImpulse, power), ForceMode.Impulse);
+            // Ensure dynamic and awake before AddForce — probe showed AddForce ignored when kinematic/sleeping
+            // Realistic physics: use AddForce Impulse (mass-dependent) as requested
+            float impulse = Mathf.Lerp(1.1f, maximumImpulse, power);
+            Debug.Log($"[MinimalGolfGame] Shot impulse {impulse:F3} power {power:F3} direction {direction}");
+            ball.AddForce(direction * impulse, ForceMode.Impulse);
+            // Wake again after impulse in case FixedUpdate would sleep it
             levelStrokes++;
             totalStrokes++;
             AudioManager.Instance?.PlayShotSfx();
@@ -454,18 +566,13 @@ namespace MinimalGolf
             aimDirection = Vector3.zero;
 
             Rigidbody ball = currentLevel.ball;
-            ball.isKinematic = true;
+            //ball.isKinematic = true;
             ball.interpolation = RigidbodyInterpolation.Interpolate;
             ball.transform.SetPositionAndRotation(currentLevel.ballSpawn.position, currentLevel.ballSpawn.rotation);
             ball.transform.localScale = Vector3.one;
-            Physics.SyncTransforms();
-            ball.linearVelocity = Vector3.zero;
-            ball.angularVelocity = Vector3.zero;
             if (!keepKinematic)
             {
                 ball.isKinematic = false;
-                ball.linearVelocity = Vector3.zero;
-                ball.angularVelocity = Vector3.zero;
             }
             // Haptics instead of camera shake
             OVRInput.SetControllerVibration(0.3f, 0.4f, OVRInput.Controller.LTouch);
@@ -491,9 +598,7 @@ namespace MinimalGolf
             Rigidbody ball = currentLevel.ball;
             RigidbodyInterpolation previousInterpolation = ball.interpolation;
             ball.interpolation = RigidbodyInterpolation.None;
-            ball.linearVelocity = Vector3.zero;
-            ball.angularVelocity = Vector3.zero;
-            ball.isKinematic = true;
+            //ball.isKinematic = true;
             AudioManager.Instance?.PlayHoleSfx();
             OVRInput.SetControllerVibration(1f, 0.9f, OVRInput.Controller.RTouch);
 
@@ -582,7 +687,6 @@ namespace MinimalGolf
             // makes the ball dynamic, avoiding a one-frame dynamic window over the void
             // while LevelRevealAnimator offsets the course (6m local) at VR table scale.
             ResetBall(false, keepKinematic: true);
-            Physics.SyncTransforms();
             currentLevel.revealAnimator?.PlayReveal();
             // If no reveal (no animator or 0 parts), release immediately
             if (currentLevel.revealAnimator == null || currentLevel.revealAnimator.PartCount == 0)
@@ -591,10 +695,6 @@ namespace MinimalGolf
                 if (ball != null && ball.isKinematic)
                 {
                     ball.isKinematic = false;
-                    ball.linearVelocity = Vector3.zero;
-                    ball.angularVelocity = Vector3.zero;
-                    Physics.SyncTransforms();
-                    ball.Sleep();
                 }
             }
             ShowFeedback("LEVEL " + (currentLevelIndex + 1) + "  •  " + currentLevel.levelName, 1.65f);

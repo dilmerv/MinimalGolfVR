@@ -94,6 +94,17 @@ namespace MinimalGolfEditor
             // Override VR anchor to new 1/10 scale per user request (was 0.42 @ 1.3/-0.85, now 0.042 @ 0.65/-0.45)
             game.vrAnchorLocalPosition = new Vector3(0f, -0.45f, 0.65f);
             game.vrAnchorLocalScale = new Vector3(0.042f, 0.042f, 0.042f);
+            // Clamp shot tuning to safe VR values — scene had 15, code default is 7.6. 15 makes a trigger tap launch full course.
+            // Use reflection to set serialized private field without exposing it publicly
+            var so = new UnityEditor.SerializedObject(game);
+            var prop = so.FindProperty("maximumImpulse");
+            if (prop != null) { prop.floatValue = 7.6f; so.ApplyModifiedPropertiesWithoutUndo(); }
+            else
+            {
+                // Fallback: direct field via reflection if SerializedObject not ready in batch
+                var f = typeof(MinimalGolf.MinimalGolfGame).GetField("maximumImpulse", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                if (f != null) f.SetValue(game, 7.6f);
+            }
 
             game.levels = new[] { level1, level2, level3, level4, level5, level6, level7, level8 };
             game.gameCamera = camera;
@@ -120,8 +131,8 @@ namespace MinimalGolfEditor
             line.sharedMaterial = aimingMaterial;
             line.useWorldSpace = true;
             line.positionCount = 2;
-            line.startWidth = 0.045f;
-            line.endWidth = 0.045f;
+            line.startWidth = game.aimingLineWidth;
+            line.endWidth = game.aimingLineWidth;
             line.alignment = LineAlignment.View;
             line.numCapVertices = 6;
             line.shadowCastingMode = ShadowCastingMode.Off;
@@ -306,11 +317,11 @@ namespace MinimalGolfEditor
                 AssetDatabase.CreateAsset(ballPhysicsMaterial, path);
             }
 
-            ballPhysicsMaterial.dynamicFriction = 0.38f;
-            ballPhysicsMaterial.staticFriction = 0.44f;
-            ballPhysicsMaterial.bounciness = 0.34f;
-            ballPhysicsMaterial.frictionCombine = PhysicsMaterialCombine.Average;
-            ballPhysicsMaterial.bounceCombine = PhysicsMaterialCombine.Maximum;
+            ballPhysicsMaterial.dynamicFriction = 0.55f;
+            ballPhysicsMaterial.staticFriction = 0.65f;
+            ballPhysicsMaterial.bounciness = 0.14f;
+            ballPhysicsMaterial.frictionCombine = PhysicsMaterialCombine.Maximum;
+            ballPhysicsMaterial.bounceCombine = PhysicsMaterialCombine.Average;
             EditorUtility.SetDirty(ballPhysicsMaterial);
         }
 
@@ -492,7 +503,9 @@ namespace MinimalGolfEditor
                 club.controller = OVRInput.Controller.LTouch;
                 club.game = game;
                 club.overlapRadius = 0.11f;
-                // No visible TipVisual - controller model is the visual, club is invisible collider
+                club.sphereRadius = 0.08f;
+                club.sphereOpacity = 0.35f;
+                club.showSphere = true;
             }
             if (rightAnchor != null)
             {
@@ -521,6 +534,9 @@ namespace MinimalGolfEditor
                 club.controller = OVRInput.Controller.RTouch;
                 club.game = game;
                 club.overlapRadius = 0.11f;
+                club.sphereRadius = 0.08f;
+                club.sphereOpacity = 0.35f;
+                club.showSphere = true;
             }
         }
 
@@ -954,12 +970,12 @@ namespace MinimalGolfEditor
             ball.transform.SetParent(playerGroup, false);
             ball.transform.localPosition = ballPosition;
             SphereCollider collider = ball.AddComponent<SphereCollider>();
-            collider.radius = 0.16f;
+            collider.radius = 0.2f;
             collider.sharedMaterial = ballPhysicsMaterial;
             Rigidbody rigidbody = ball.AddComponent<Rigidbody>();
-            rigidbody.mass = 0.78f;
-            rigidbody.linearDamping = 0.72f;
-            rigidbody.angularDamping = 0.82f;
+            rigidbody.mass = 0.45f;
+            rigidbody.linearDamping = 0.65f;
+            rigidbody.angularDamping = 0.9f;
             rigidbody.interpolation = RigidbodyInterpolation.Interpolate;
             rigidbody.collisionDetectionMode = CollisionDetectionMode.ContinuousDynamic;
             rigidbody.maxAngularVelocity = 18f;
