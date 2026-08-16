@@ -1882,6 +1882,7 @@ MonoBehaviour:
   game: {fileID: 121582274}
   uiFont: {fileID: 12800000, guid: eadd50d934cf64a96ab9297d5aad7947, type: 3}
   vrCourseAnchor: {fileID: 1814949056}
+  vrUIAnchor: {fileID: 2126966866}
   gamePlayCanvas: {fileID: 172586309}
   powerCanvas: {fileID: 1073691443}
   feedbackCanvas: {fileID: 1757499360}
@@ -1949,22 +1950,23 @@ MonoBehaviour:
   aimingLineWidth: 0.012
   ovrRig: {fileID: 345809988}
   vrCourseAnchor: {fileID: 1814949056}
-  vrCourseLevels: {fileID: 0}
+  vrCourseLevels: {fileID: 900000002}
+  vrUIAnchor: {fileID: 2126966866}
   vrAnchorLocalPosition: {x: 0, y: 0.75, z: 0.65}
   vrAnchorLocalScale: {x: 1, y: 1, z: 1}
   vrCourseLevelsLocalScale: {x: 0.042, y: 0.042, z: 0.042}
-  thumbstickRotationSpeed: 70
-  maximumImpulse: 7.6
-  maximumDragDistance: 3.1
-  playableSpeed: 0.32
-  vrMaximumDragDistance: 0.45
-  vrMinShotPower: 0.012
-  assistRadius: 0.015
-  captureRadius: 0.012
-  maximumAssistedSpeed: 3.5
-  maximumCaptureSpeed: 2.5
-  minimumPullAcceleration: 1.25
-  maximumPullAcceleration: 5.5
+  thumbstickRotationSpeed: 30
+  maximumImpulse: 2
+  maximumDragDistance: 0.35
+  playableSpeed: 0.1
+  vrMaximumDragDistance: 0.16
+  vrMinShotPower: 0.01
+  assistRadius: 0.04
+  captureRadius: 0.008
+  maximumAssistedSpeed: 0.6
+  maximumCaptureSpeed: 0.35
+  minimumPullAcceleration: 0.35
+  maximumPullAcceleration: 1.2
 --- !u!4 &121582275
 Transform:
   m_ObjectHideFlags: 0
@@ -12631,7 +12633,7 @@ Transform:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 900000001}
   serializedVersion: 2
-  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalRotation: {x: -0, y: -0, z: -0, w: 1}
   m_LocalPosition: {x: 0, y: 0, z: 0}
   m_LocalScale: {x: 0.05, y: 0.05, z: 0.05}
   m_ConstrainProportionsScale: 0
@@ -22710,7 +22712,7 @@ Transform:
   - {fileID: 1073691440}
   - {fileID: 1757499356}
   - {fileID: 1027435427}
-  m_Father: {fileID: 1814949056}
+  m_Father: {fileID: 2126966866}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1001 &1681096930
 PrefabInstance:
@@ -24810,12 +24812,12 @@ Transform:
   m_GameObject: {fileID: 1814949055}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 0, y: 1.4499999, z: 0.55}
+  m_LocalPosition: {x: 0, y: 1.1, z: 0.55}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children:
   - {fileID: 900000002}
-  - {fileID: 1663502222}
+  - {fileID: 2126966866}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!114 &1814949057
@@ -24831,7 +24833,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: MinimalGolf::MinimalGolf.VRCoursePlacement
   forwardDistance: 0.55
-  heightBelowEye: 0.2
+  heightBelowEye: 0.5
   tableScale: 0.05
 --- !u!1 &1824724192
 GameObject:
@@ -29583,6 +29585,38 @@ Material:
     - _Color: {r: 0.3, g: 0.9, b: 0.6, a: 0.2}
   m_BuildTextureStacks: []
   m_AllowLocking: 1
+--- !u!1 &2126966865
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 2126966866}
+  m_Layer: 0
+  m_Name: VR_UI_Root
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &2126966866
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2126966865}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children:
+  - {fileID: 1663502222}
+  m_Father: {fileID: 1814949056}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1001 &2127416079
 PrefabInstance:
   m_ObjectHideFlags: 0

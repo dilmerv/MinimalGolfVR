@@ -20,30 +20,32 @@ namespace MinimalGolf
         public OVRCameraRig ovrRig;
         public Transform vrCourseAnchor;
         public Transform vrCourseLevels;
+        [Tooltip("Stable UI root at same level as VRCourseAnchor — NOT rotated by thumbstick. Holds VR_UI.")]
+        public Transform vrUIAnchor;
         [Tooltip("VR course anchor local position relative to TrackingSpace. Beneath eye level, in front.")]
         public Vector3 vrAnchorLocalPosition = new Vector3(0f, 0.75f, 0.65f);
         public Vector3 vrAnchorLocalScale = new Vector3(1f, 1f, 1f);
         public Vector3 vrCourseLevelsLocalScale = new Vector3(0.042f, 0.042f, 0.042f);
-        public float thumbstickRotationSpeed = 70f;
+        public float thumbstickRotationSpeed = 30f;
 
         [Header("Shot Tuning")]
-        [SerializeField] private float maximumImpulse = 7.6f;
-        [SerializeField] private float maximumDragDistance = 3.1f;
-        [SerializeField] private float playableSpeed = 0.32f;
+        [SerializeField] private float maximumImpulse = 2.0f;
+        [SerializeField] private float maximumDragDistance = 0.35f;
+        [SerializeField] private float playableSpeed = 0.10f;
         [Header("VR Tuning")]
         [Tooltip("Max pull distance in world meters when in VR (course is at 0.042 scale, so world pull is much smaller than legacy 3.1).")]
-        public float vrMaximumDragDistance = 0.45f;
-        [Tooltip("Minimum shotPower to fire (was 0.035 -> 0.108m world at 3.1). Lowered for VR so 4cm pull fires.")]
-        [Range(0.005f, 0.05f)] public float vrMinShotPower = 0.012f;
+        public float vrMaximumDragDistance = 0.16f;
+        [Tooltip("Minimum shotPower to fire (was 0.035 -> 0.108m world at 3.1). 0.045 at 0.16 = 7.2mm deadzone.")]
+        [Range(0.005f, 0.1f)] public float vrMinShotPower = 0.045f;
 
         [Header("Cup Assist")]
-        [SerializeField] private float assistRadius = 1.15f;
+        [SerializeField] private float assistRadius = 0.08f;
         [SerializeField, Tooltip("Ball-center distance at which the final cup animation begins. Keep this within the dark cup so the ball is fully supported visually.")]
-        private float captureRadius = 0.012f;
-        [SerializeField] private float maximumAssistedSpeed = 3.5f;
-        [SerializeField] private float maximumCaptureSpeed = 2.5f;
-        [SerializeField] private float minimumPullAcceleration = 1.25f;
-        [SerializeField] private float maximumPullAcceleration = 5.5f;
+        private float captureRadius = 0.008f;
+        [SerializeField] private float maximumAssistedSpeed = 0.6f;
+        [SerializeField] private float maximumCaptureSpeed = 0.35f;
+        [SerializeField] private float minimumPullAcceleration = 0.35f;
+        [SerializeField] private float maximumPullAcceleration = 1.2f;
 
         private MiniGolfLevel currentLevel;
         private int currentLevelIndex;
@@ -120,8 +122,8 @@ namespace MinimalGolf
                 }
             }
 
-            // Clamp legacy scene's maximumImpulse (was 15) to safe 7.6 so a light pull doesn't launch full course.
-            if (maximumImpulse > 8.0f) maximumImpulse = 7.6f;
+            // Clamp legacy scene's maximumImpulse (was 15 -> 7.6) to meter-correct 2.0 so pull doesn't launch off 0.042 table.
+            if (maximumImpulse > 3.0f) maximumImpulse = 2.0f;
 
             EnsureVRRig();
 
@@ -141,8 +143,8 @@ namespace MinimalGolf
             // Keep line visible — 0.005 is sub-pixel at 0.65m table distance. Clamp to at least 0.015.
             if (aimingLineWidth < 0.01f) aimingLineWidth = 0.02f;
             aimingLineWidth = Mathf.Clamp(aimingLineWidth, 0.012f, 0.2f);
-            vrMaximumDragDistance = Mathf.Clamp(vrMaximumDragDistance, 0.2f, 1.0f);
-            vrMinShotPower = Mathf.Clamp(vrMinShotPower, 0.005f, 0.05f);
+            vrMaximumDragDistance = Mathf.Clamp(vrMaximumDragDistance, 0.08f, 1.0f);
+            vrMinShotPower = Mathf.Clamp(vrMinShotPower, 0.005f, 0.1f);
             if (aimingLine != null)
             {
                 aimingLine.startWidth = aimingLineWidth;
@@ -219,14 +221,72 @@ namespace MinimalGolf
                     {
                         vrCourseLevels.localScale = vrCourseLevelsLocalScale;
                     }
-                    // Ensure VR UI exists
+                    // Migrate legacy VR_UI that was child of VRCourseAnchor -> move to stable vrUIAnchor
+                    Transform legacyUI = vrCourseAnchor.Find("VR_UI");
+                    if (legacyUI != null)
+                    {
+                        // Ensure stable anchor exists first so we can reparent
+                        if (vrUIAnchor == null)
+                        {
+                            var uiRootGO = new GameObject("VR_UI_Root");
+                            uiRootGO.transform.localPosition = vrAnchorLocalPosition;
+                            uiRootGO.transform.localRotation = Quaternion.identity;
+                            uiRootGO.transform.localScale = vrAnchorLocalScale;
+                            // Place at scene root, sibling to VRCourseAnchor (same level)
+                            if (vrCourseAnchor.parent != null)
+                                uiRootGO.transform.SetParent(vrCourseAnchor.parent, false);
+                            vrUIAnchor = uiRootGO.transform;
+                        }
+                        legacyUI.SetParent(vrUIAnchor, true);
+                        // Keep world position stable, reset local to preserve previous VR_UI local offset if needed
+                        Debug.Log("[MinimalGolfGame] Migrated legacy VR_UI from VRCourseAnchor -> vrUIAnchor");
+                    }
+                    // Ensure stable UI anchor exists at same level as VRCourseAnchor (NOT under it — avoids rotation)
+                    if (vrUIAnchor == null)
+                    {
+                        // Try find existing root at scene root
+                        var existingRoot = GameObject.Find("VR_UI_Root");
+                        if (existingRoot != null) vrUIAnchor = existingRoot.transform;
+                        else
+                        {
+                            Transform existingUI = null;
+                            // Search for VR_UI already under a different parent (e.g., after migration)
+                            var all = FindObjectsByType<Transform>(FindObjectsInactive.Include, FindObjectsSortMode.None);
+                            foreach (var t in all) if (t.name == "VR_UI") { existingUI = t.parent; break; }
+                            if (existingUI != null) vrUIAnchor = existingUI;
+                        }
+                        if (vrUIAnchor == null)
+                        {
+                            GameObject anchorGO = new GameObject("VR_UI_Root");
+                            anchorGO.transform.localPosition = vrAnchorLocalPosition;
+                            anchorGO.transform.localRotation = Quaternion.identity;
+                            anchorGO.transform.localScale = vrAnchorLocalScale;
+                            if (vrCourseAnchor.parent != null)
+                                anchorGO.transform.SetParent(vrCourseAnchor.parent, false);
+                            vrUIAnchor = anchorGO.transform;
+                        }
+                    }
+                    else
+                    {
+                        // Keep UI anchor stable — enforce position/scale but NEVER copy rotation from course
+                        vrUIAnchor.localPosition = vrAnchorLocalPosition;
+                        vrUIAnchor.localScale = vrAnchorLocalScale;
+                    }
+                    // Ensure VR UI exists — parented to vrUIAnchor, sibling level to VRCourseLevels
                     if (FindFirstObjectByType<VRGolfUI>(FindObjectsInactive.Include) == null)
                     {
                         var ui = gameObject.AddComponent<VRGolfUI>();
                         ui.game = this;
                         ui.vrCourseAnchor = vrCourseAnchor;
+                        ui.vrUIAnchor = vrUIAnchor;
                         ui.uiFont = uiFont;
                         Debug.Log("[MinimalGolfGame] Created VRGolfUI at runtime.");
+                    }
+                    else
+                    {
+                        var existingUI = FindFirstObjectByType<VRGolfUI>(FindObjectsInactive.Include);
+                        if (existingUI != null && existingUI.vrUIAnchor == null)
+                            existingUI.vrUIAnchor = vrUIAnchor;
                     }
                     // Ensure clubs on anchors - defer one frame for OVRCameraRig to init
                     StartCoroutine(EnsureClubsNextFrame());
@@ -316,9 +376,9 @@ namespace MinimalGolf
 
         private void HandleThumbstickRotation()
         {
-            if (dragging || vrCourseAnchor == null) return;
+            if (dragging || vrCourseLevels == null) return;
             if (!CanTakeAction()) return;
-            // Right thumbstick X rotates course per grill decision (thumbstick yaw)
+            // Right thumbstick X rotates course per grill decision (thumbstick yaw) — rotate VRCourseLevels only, anchor stays stable
             Vector2 thumb = OVRInput.Get(OVRInput.Axis2D.PrimaryThumbstick, OVRInput.Controller.RTouch);
             if (thumb.sqrMagnitude < 0.25f)
                 thumb = OVRInput.Get(OVRInput.Axis2D.PrimaryThumbstick, OVRInput.Controller.LTouch);
@@ -326,12 +386,12 @@ namespace MinimalGolf
             if (Mathf.Abs(thumb.x) > 0.6f)
             {
                 float yaw = thumb.x * thumbstickRotationSpeed * Time.deltaTime;
-                // Rotate anchor around up in world, but keep position (Rotate does not translate)
-                Vector3 posBefore = vrCourseAnchor.position;
-                vrCourseAnchor.Rotate(Vector3.up, yaw, Space.World);
+                // Rotate levels around up in world, but keep position (Rotate does not translate)
+                Vector3 posBefore = vrCourseLevels.position;
+                vrCourseLevels.Rotate(Vector3.up, yaw, Space.World);
                 // Guard against any position drift (Rotate should not translate, but clamp just in case)
-                if ((vrCourseAnchor.position - posBefore).sqrMagnitude > 0.0005f)
-                    vrCourseAnchor.position = posBefore;
+                if ((vrCourseLevels.position - posBefore).sqrMagnitude > 0.0005f)
+                    vrCourseLevels.position = posBefore;
             }
             // Hard clamp rig to origin — prevents continuous backward drift from external locomotion / tracking
             // Fix for CenterEyeAnchor falling: previously only x/z were clamped, leaving y free to accumulate gravity drift
@@ -537,7 +597,7 @@ namespace MinimalGolf
             Rigidbody ball = currentLevel.ball;
             // Ensure dynamic and awake before AddForce — probe showed AddForce ignored when kinematic/sleeping
             // Realistic physics: use AddForce Impulse (mass-dependent) as requested
-            float impulse = Mathf.Lerp(1.1f, maximumImpulse, power);
+            float impulse = Mathf.Lerp(0.25f, maximumImpulse, power);
             Debug.Log($"[MinimalGolfGame] Shot impulse {impulse:F3} power {power:F3} direction {direction}");
             ball.AddForce(direction * impulse, ForceMode.Impulse);
             // Wake again after impulse in case FixedUpdate would sleep it

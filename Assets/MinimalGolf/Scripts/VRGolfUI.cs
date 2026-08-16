@@ -18,7 +18,10 @@ namespace MinimalGolf
     {
         public MinimalGolfGame game;
         public Font uiFont;
+        [Tooltip("Legacy — kept for migration. Use vrUIAnchor for new UI root.")]
         public Transform vrCourseAnchor;
+        [Tooltip("Stable UI anchor (VR_UI_Root), sibling to VRCourseAnchor — NOT rotated by thumbstick. Holds VR_UI.")]
+        public Transform vrUIAnchor;
 
         [Header("World Space Canvas Refs (auto-created if null)")]
         [Tooltip("Combined gameplay HUD (was IdentityCard + StatsCard + ProgressCard)")]
@@ -250,6 +253,7 @@ namespace MinimalGolf
         private void CacheReferences()
         {
             if (game == null) game = FindFirstObjectByType<MinimalGolfGame>();
+            if (vrUIAnchor == null && game != null) vrUIAnchor = game.vrUIAnchor;
             if (vrCourseAnchor == null && game != null) vrCourseAnchor = game.vrCourseAnchor;
             if (vrCourseAnchor == null)
             {
@@ -273,13 +277,30 @@ namespace MinimalGolf
                     }
                 }
             }
+            // Prefer vrUIAnchor — stable root sibling to VRCourseAnchor. Fallback to legacy vrCourseAnchor for migration.
+            if (vrUIAnchor == null)
+            {
+                var go = GameObject.Find("VR_UI_Root");
+                if (go != null) vrUIAnchor = go.transform;
+            }
+            if (vrUIAnchor == null)
+            {
+                // If legacy VR_UI still under course anchor, use that as anchor fallback (will be migrated by MinimalGolfGame)
+                var legacy = GameObject.Find("VR_UI");
+                if (legacy != null && legacy.transform.parent != null) vrUIAnchor = legacy.transform.parent;
+            }
             if (uiFont == null && game != null) uiFont = game.uiFont;
             if (uiFont == null)
             {
                 uiFont = Resources.GetBuiltinResource<Font>("Arial.ttf");
             }
-            if (vrCourseAnchor != null)
+            if (vrUIAnchor != null)
             {
+                _uiRoot = vrUIAnchor.Find("VR_UI");
+            }
+            else if (vrCourseAnchor != null)
+            {
+                // Legacy fallback
                 _uiRoot = vrCourseAnchor.Find("VR_UI");
             }
         }
@@ -517,8 +538,8 @@ namespace MinimalGolf
         [ContextMenu("Remove Preview Canvases (VR_UI)")]
         public void RemovePreviewCanvases()
         {
-            if (vrCourseAnchor == null) CacheReferences();
-            Transform uiRoot = vrCourseAnchor != null ? vrCourseAnchor.Find("VR_UI") : null;
+            if (vrUIAnchor == null && vrCourseAnchor == null) CacheReferences();
+            Transform uiRoot = vrUIAnchor != null ? vrUIAnchor.Find("VR_UI") : vrCourseAnchor != null ? vrCourseAnchor.Find("VR_UI") : null;
             if (uiRoot != null)
             {
 #if UNITY_EDITOR
@@ -544,9 +565,21 @@ namespace MinimalGolf
 
         private void EnsureCanvases(bool forceRecreate = false)
         {
-            if (vrCourseAnchor == null) return;
+            // Resolve stable anchor: prefer vrUIAnchor, fallback to vrCourseAnchor for migration
+            Transform anchor = vrUIAnchor != null ? vrUIAnchor : vrCourseAnchor;
+            if (anchor == null) return;
+            // Auto-migrate legacy VR_UI that is still under vrCourseAnchor
+            if (vrUIAnchor != null && vrCourseAnchor != null)
+            {
+                Transform legacy = vrCourseAnchor.Find("VR_UI");
+                if (legacy != null)
+                {
+                    legacy.SetParent(vrUIAnchor, true);
+                    Debug.Log("[VRGolfUI] Migrated legacy VR_UI -> vrUIAnchor");
+                }
+            }
 
-            Transform uiRoot = vrCourseAnchor.Find("VR_UI");
+            Transform uiRoot = anchor.Find("VR_UI");
             // Migrate / clean old separate canvases if they exist
             if (uiRoot != null)
             {
@@ -604,7 +637,7 @@ namespace MinimalGolf
 #if UNITY_EDITOR
                 if (!Application.isPlaying) Undo.RegisterCreatedObjectUndo(root, "Create VR_UI");
 #endif
-                root.transform.SetParent(vrCourseAnchor, false);
+                root.transform.SetParent(anchor, false);
                 root.transform.localPosition = Vector3.zero;
                 root.transform.localRotation = Quaternion.identity;
                 root.transform.localScale = Vector3.one;
