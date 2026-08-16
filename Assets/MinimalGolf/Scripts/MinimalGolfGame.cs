@@ -1,6 +1,5 @@
 using System.Collections;
 using UnityEngine;
-using UnityEngine.InputSystem;
 
 namespace MinimalGolf
 {
@@ -11,6 +10,16 @@ namespace MinimalGolf
         public Camera gameCamera;
         public LineRenderer aimingLine;
         public Font uiFont;
+
+        [Header("VR References")]
+        public OVRCameraRig ovrRig;
+        public Transform vrCourseAnchor;
+        public Transform vrCourseLevels;
+        [Tooltip("VR course anchor local position relative to TrackingSpace. Beneath eye level, in front.")]
+        public Vector3 vrAnchorLocalPosition = new Vector3(0f, 0.75f, 0.65f);
+        public Vector3 vrAnchorLocalScale = new Vector3(1f, 1f, 1f);
+        public Vector3 vrCourseLevelsLocalScale = new Vector3(0.042f, 0.042f, 0.042f);
+        public float thumbstickRotationSpeed = 70f;
 
         [Header("Shot Tuning")]
         [SerializeField] private float maximumImpulse = 7.6f;
@@ -40,32 +49,6 @@ namespace MinimalGolf
         private string feedback = string.Empty;
         private float feedbackUntil;
 
-        private GUIStyle titleStyle;
-        private GUIStyle headingStyle;
-        private GUIStyle bodyStyle;
-        private GUIStyle smallStyle;
-        private GUIStyle centeredStyle;
-        private GUIStyle hugeStyle;
-        private GUIStyle eyebrowStyle;
-        private GUIStyle eyebrowRightStyle;
-        private GUIStyle statLabelStyle;
-        private GUIStyle statValueStyle;
-        private GUIStyle darkCenteredStyle;
-        private GUIStyle roundedPanelStyle;
-        private Texture2D whiteTexture;
-        private Texture2D roundedTexture;
-
-        private static readonly Color BackgroundColor = new Color32(0x77, 0x9E, 0xBE, 0xFF);
-        private static readonly Color PanelColor = new Color(0.055f, 0.14f, 0.19f, 0.90f);
-        private static readonly Color PanelSoftColor = new Color(0.055f, 0.14f, 0.19f, 0.72f);
-        private static readonly Color PaleText = new Color32(0xFA, 0xF1, 0xD2, 0xFF);
-        private static readonly Color Accent = new Color32(0xA9, 0xDB, 0xE8, 0xFF);
-        private static readonly Color OrangeAccent = new Color32(0xE1, 0x82, 0x2F, 0xFF);
-        private static readonly Color Seafoam = new Color32(0x8B, 0xCB, 0xA8, 0xFF);
-        private static readonly Color Ink = new Color32(0x16, 0x35, 0x3D, 0xFF);
-        private static readonly Color WarmCream = new Color32(0xFF, 0xED, 0xBF, 0xFF);
-        private static readonly Color Gold = new Color32(0xF3, 0xC9, 0x6B, 0xFF);
-
         public int CurrentLevelIndex => currentLevelIndex;
         public int LevelStrokes => levelStrokes;
         public int TotalStrokes => totalStrokes;
@@ -74,6 +57,13 @@ namespace MinimalGolf
         public bool IsCourseComplete => courseComplete;
         public MiniGolfLevel CurrentLevel => currentLevel;
         public MiniGolfLevel[] AllLevels => levels;
+        public float ShotPower => shotPower;
+        public bool IsAiming => dragging;
+        public Vector3 AimDirection => aimDirection;
+        public string CurrentFeedback => feedback;
+        public float FeedbackUntil => feedbackUntil;
+        public float MaximumDragDistance => maximumDragDistance;
+        public float MaximumImpulse => maximumImpulse;
 
         public bool GetUIValues(out int strokes, out int par, out string levelName, out int levelIndex, out int levelCount)
         {
@@ -88,9 +78,7 @@ namespace MinimalGolf
         private void Awake()
         {
             Application.targetFrameRate = 120;
-            QualitySettings.vSyncCount = 1;
-            whiteTexture = Texture2D.whiteTexture;
-            roundedTexture = CreateRoundedTexture(32, 9f);
+            QualitySettings.vSyncCount = 0;
 
             if (levels == null || levels.Length == 0)
                 levels = FindObjectsByType<MiniGolfLevel>(FindObjectsInactive.Include, FindObjectsSortMode.None);
@@ -98,8 +86,7 @@ namespace MinimalGolf
             foreach (MiniGolfLevel level in levels)
                 level.CacheAuthoredState();
 
-            if (gameCamera == null)
-                gameCamera = Camera.main;
+            EnsureVRRig();
 
             if (aimingLine != null)
             {
@@ -111,17 +98,145 @@ namespace MinimalGolf
             }
         }
 
+        private void EnsureVRRig()
+        {
+            if (ovrRig == null)
+                ovrRig = FindFirstObjectByType<OVRCameraRig>(FindObjectsInactive.Include);
+            if (ovrRig == null)
+            {
+                // Create VR rig at runtime if not present in scene (EditMode still has old camera)
+                GameObject rigGO = new GameObject("OVRCameraRig");
+                ovrRig = rigGO.AddComponent<OVRCameraRig>();
+                var manager = rigGO.AddComponent<OVRManager>();
+                manager.trackingOriginType = OVRManager.TrackingOrigin.FloorLevel;
+                Debug.Log("[MinimalGolfGame] Created OVRCameraRig at runtime for VR.");
+            }
+            if (ovrRig != null)
+            {
+                Camera centerCam = ovrRig.centerEyeAnchor != null ? ovrRig.centerEyeAnchor.GetComponent<Camera>() : null;
+                if (gameCamera == null && centerCam != null)
+                    gameCamera = centerCam;
+                // Disable old isometric camera if still present
+                var oldCam = GameObject.Find("ISOMETRIC CAMERA");
+                if (oldCam != null) oldCam.SetActive(false);
+                // Ensure anchor exists - now at scene root, same level as OVRCameraRig
+                if (vrCourseAnchor == null)
+                {
+                    var placement = FindFirstObjectByType<VRCoursePlacement>(FindObjectsInactive.Include);
+                    if (placement != null) vrCourseAnchor = placement.transform;
+                    if (vrCourseAnchor == null)
+                    {
+                        GameObject go = GameObject.Find("VRCourseAnchor");
+                        if (go != null) vrCourseAnchor = go.transform;
+                    }
+                    if (vrCourseAnchor == null)
+                    {
+                        Transform ts = ovrRig.trackingSpace;
+                        Transform existing = ts != null ? ts.Find("VRCourseAnchor") : null;
+                        if (existing != null) vrCourseAnchor = existing;
+                        else
+                        {
+                            GameObject anchorGO = new GameObject("VRCourseAnchor");
+                            // Place at world level, sibling to OVRCameraRig (not under TrackingSpace)
+                            anchorGO.transform.localPosition = vrAnchorLocalPosition;
+                            anchorGO.transform.localRotation = Quaternion.identity;
+                            anchorGO.transform.localScale = vrAnchorLocalScale;
+                            vrCourseAnchor = anchorGO.transform;
+                        }
+                    }
+                }
+                if (vrCourseAnchor != null)
+                {
+                    vrCourseAnchor.localPosition = vrAnchorLocalPosition;
+                    vrCourseAnchor.localScale = vrAnchorLocalScale;
+                    // Ensure VRCourseLevels exists under anchor with 1/10 scale
+                    if (vrCourseLevels == null)
+                        vrCourseLevels = vrCourseAnchor.Find("VRCourseLevels");
+                    if (vrCourseLevels == null)
+                    {
+                        GameObject levelsGO = new GameObject("VRCourseLevels");
+                        levelsGO.transform.SetParent(vrCourseAnchor, false);
+                        levelsGO.transform.localPosition = Vector3.zero;
+                        levelsGO.transform.localRotation = Quaternion.identity;
+                        levelsGO.transform.localScale = vrCourseLevelsLocalScale;
+                        vrCourseLevels = levelsGO.transform;
+                    }
+                    else
+                    {
+                        vrCourseLevels.localScale = vrCourseLevelsLocalScale;
+                    }
+                    // Ensure VR UI exists
+                    if (FindFirstObjectByType<VRGolfUI>(FindObjectsInactive.Include) == null)
+                    {
+                        var ui = gameObject.AddComponent<VRGolfUI>();
+                        ui.game = this;
+                        ui.vrCourseAnchor = vrCourseAnchor;
+                        ui.uiFont = uiFont;
+                        Debug.Log("[MinimalGolfGame] Created VRGolfUI at runtime.");
+                    }
+                    // Ensure clubs on anchors - defer one frame for OVRCameraRig to init
+                    StartCoroutine(EnsureClubsNextFrame());
+                }
+            }
+            else
+            {
+                Debug.LogWarning("[MinimalGolfGame] OVRCameraRig not found - VR mode will fallback but should be present.");
+            }
+        }
+
+        private IEnumerator EnsureClubsNextFrame()
+        {
+            yield return null;
+            if (ovrRig == null) yield break;
+            // Prefer Controller anchors (Touch) over Hand anchors; they are correctly offset for controllers
+            Transform leftAnchor = ovrRig.leftControllerAnchor != null ? ovrRig.leftControllerAnchor : ovrRig.leftHandAnchor;
+            Transform rightAnchor = ovrRig.rightControllerAnchor != null ? ovrRig.rightControllerAnchor : ovrRig.rightHandAnchor;
+            if (leftAnchor != null && leftAnchor.GetComponentInChildren<VRGolfClub>() == null)
+                CreateClub(leftAnchor, OVRInput.Controller.LTouch);
+            if (rightAnchor != null && rightAnchor.GetComponentInChildren<VRGolfClub>() == null)
+                CreateClub(rightAnchor, OVRInput.Controller.RTouch);
+        }
+
+        private void CreateClub(Transform anchor, OVRInput.Controller controller)
+        {
+            GameObject clubGO = new GameObject(controller == OVRInput.Controller.LTouch ? "VR Club Left" : "VR Club Right");
+            clubGO.transform.SetParent(anchor, false);
+            clubGO.transform.localPosition = Vector3.zero;
+            clubGO.transform.localRotation = Quaternion.identity;
+            var col = clubGO.AddComponent<SphereCollider>();
+            col.isTrigger = true;
+            col.radius = 0.035f;
+            var club = clubGO.AddComponent<VRGolfClub>();
+            club.controller = controller;
+            club.game = this;
+            club.overlapRadius = 0.11f;
+        }
+
         private void Start()
         {
             LoadLevel(0, true);
+            StartCoroutine(LogVRPose());
+        }
+
+        private IEnumerator LogVRPose()
+        {
+            yield return null;
+            yield return new WaitForSeconds(0.5f);
+            if (ovrRig != null && ovrRig.centerEyeAnchor != null && vrCourseAnchor != null)
+                Debug.Log($"[VRPose] eye {ovrRig.centerEyeAnchor.position} anchor {vrCourseAnchor.position}");
         }
 
         private void Update()
         {
             if (courseComplete)
             {
-                Keyboard keyboard = Keyboard.current;
-                if (keyboard != null && (keyboard.enterKey.wasPressedThisFrame || keyboard.spaceKey.wasPressedThisFrame))
+                // VR UI button handles restart, but keep keyboard fallback for editor/tests
+#if UNITY_EDITOR
+                if (Input.GetKeyDown(KeyCode.Return) || Input.GetKeyDown(KeyCode.Space))
+                    RestartCourse();
+#endif
+                if (OVRInput.GetDown(OVRInput.Button.One, OVRInput.Controller.RTouch) ||
+                    OVRInput.GetDown(OVRInput.Button.One, OVRInput.Controller.LTouch))
                     RestartCourse();
                 return;
             }
@@ -132,14 +247,31 @@ namespace MinimalGolf
             if (currentLevel.IsRevealing)
                 return;
 
-            HandleKeyboard();
-            HandlePointer();
+            HandleThumbstickRotation();
 
             Rigidbody ball = currentLevel.ball;
             if (!capturing && currentLevel.IsOutsideCourse(ball.position))
             {
                 ResetBall(false);
                 ShowFeedback("BALL RETURNED");
+            }
+        }
+
+        private void HandleThumbstickRotation()
+        {
+            if (dragging || vrCourseAnchor == null) return;
+            if (!CanTakeAction()) return;
+            // Right thumbstick X rotates course per grill decision (thumbstick yaw)
+            Vector2 thumb = OVRInput.Get(OVRInput.Axis2D.PrimaryThumbstick, OVRInput.Controller.RTouch);
+            if (thumb.sqrMagnitude < 0.25f)
+                thumb = OVRInput.Get(OVRInput.Axis2D.PrimaryThumbstick, OVRInput.Controller.LTouch);
+            if (Mathf.Abs(thumb.x) > 0.6f)
+            {
+                float yaw = thumb.x * thumbstickRotationSpeed * Time.deltaTime;
+                // Rotate anchor around up in world, but keep position
+                vrCourseAnchor.Rotate(Vector3.up, yaw, Space.World);
+                // Also need to sync physics if ball is kinematic? We keep ball physics stable
+                Physics.SyncTransforms();
             }
         }
 
@@ -189,75 +321,62 @@ namespace MinimalGolf
             }
         }
 
-        private void HandleKeyboard()
+        // VR aiming API used by VRGolfClub
+        public bool BeginVRAim(Vector3 startWorld)
         {
-            Keyboard keyboard = Keyboard.current;
-            if (keyboard == null)
-                return;
-
-            if (keyboard.rKey.wasPressedThisFrame)
-                ResetLevelWithPenalty();
-
-            if (keyboard.leftArrowKey.wasPressedThisFrame)
-                TryRotateLevel(-1);
-            else if (keyboard.rightArrowKey.wasPressedThisFrame)
-                TryRotateLevel(1);
+            if (!CanTakeAction())
+            {
+                ShowFeedback("WAIT FOR THE BALL");
+                return false;
+            }
+            dragging = true;
+            dragStartWorld = startWorld;
+            dragStartWorld.y = currentLevel != null ? currentLevel.ball.position.y : dragStartWorld.y;
+            aimDirection = Vector3.zero;
+            shotPower = 0f;
+            if (aimingLine != null) aimingLine.enabled = true;
+            UpdateAimingLine();
+            return true;
         }
 
-        private void HandlePointer()
+        public void UpdateVRAim(Vector3 currentWorld)
         {
-            Mouse mouse = Mouse.current;
-            if (mouse == null || capturing)
-                return;
-
-            if (mouse.leftButton.wasPressedThisFrame)
-            {
-                if (!CanTakeAction())
-                {
-                    ShowFeedback("WAIT FOR THE BALL");
-                    return;
-                }
-
-                if (TryGetPointerWorld(mouse.position.ReadValue(), out Vector3 world))
-                {
-                    dragging = true;
-                    dragStartWorld = world;
-                    aimDirection = Vector3.zero;
-                    shotPower = 0f;
-                    aimingLine.enabled = true;
-                    UpdateAimingLine();
-                }
-            }
-
-            if (dragging && mouse.leftButton.isPressed && TryGetPointerWorld(mouse.position.ReadValue(), out Vector3 currentWorld))
-            {
-                Vector3 pull = dragStartWorld - currentWorld;
-                pull.y = 0f;
-                float distance = Mathf.Min(pull.magnitude, maximumDragDistance);
-                shotPower = Mathf.Clamp01(distance / maximumDragDistance);
-                aimDirection = pull.sqrMagnitude > 0.0001f ? pull.normalized : Vector3.zero;
-                UpdateAimingLine();
-            }
-
-            if (dragging && mouse.leftButton.wasReleasedThisFrame)
-                ReleaseShot();
+            if (!dragging) return;
+            currentWorld.y = dragStartWorld.y;
+            Vector3 pull = dragStartWorld - currentWorld;
+            pull.y = 0f;
+            float distance = Mathf.Min(pull.magnitude, maximumDragDistance);
+            shotPower = Mathf.Clamp01(distance / maximumDragDistance);
+            aimDirection = pull.sqrMagnitude > 0.0001f ? pull.normalized : Vector3.zero;
+            UpdateAimingLine();
         }
 
-        private bool TryGetPointerWorld(Vector2 screenPosition, out Vector3 world)
+        public bool TryEndVRAimAndShoot()
         {
-            Plane aimPlane = new Plane(Vector3.up, currentLevel.ball.position);
-            Ray ray = gameCamera.ScreenPointToRay(screenPosition);
-            if (aimPlane.Raycast(ray, out float distance))
+            if (!dragging) return false;
+            dragging = false;
+            if (aimingLine != null) aimingLine.enabled = false;
+            if (shotPower < 0.035f || aimDirection.sqrMagnitude < 0.1f || !CanTakeAction())
             {
-                world = ray.GetPoint(distance);
-                return true;
+                shotPower = 0f;
+                aimDirection = Vector3.zero;
+                return false;
             }
-
-            world = default;
-            return false;
+            bool ok = TryApplyShot(aimDirection, shotPower);
+            shotPower = 0f;
+            aimDirection = Vector3.zero;
+            return ok;
         }
 
-        private void UpdateAimingLine()
+        public void CancelAim()
+        {
+            dragging = false;
+            if (aimingLine != null) aimingLine.enabled = false;
+            shotPower = 0f;
+            aimDirection = Vector3.zero;
+        }
+
+        public void UpdateAimingLine()
         {
             if (aimingLine == null || currentLevel == null)
                 return;
@@ -268,8 +387,8 @@ namespace MinimalGolf
             aimingLine.SetPosition(1, ballCenter + aimDirection * displayLength);
 
             Color low = new Color32(0x89, 0xE0, 0xB3, 0xFF);
-            Color middle = Gold;
-            Color high = OrangeAccent;
+            Color middle = new Color32(0xF3, 0xC9, 0x6B, 0xFF);
+            Color high = new Color32(0xE1, 0x82, 0x2F, 0xFF);
             Color color = shotPower < 0.55f
                 ? Color.Lerp(low, middle, shotPower / 0.55f)
                 : Color.Lerp(middle, high, (shotPower - 0.55f) / 0.45f);
@@ -277,54 +396,32 @@ namespace MinimalGolf
             aimingLine.endColor = color;
         }
 
-        private void ReleaseShot()
+        public bool TryApplyShot(Vector3 direction, float power)
         {
-            dragging = false;
-            aimingLine.enabled = false;
-
-            if (shotPower < 0.035f || aimDirection.sqrMagnitude < 0.1f || !CanTakeAction())
-                return;
-
+            if (!CanTakeAction()) return false;
+            direction.y = 0f;
+            if (direction.sqrMagnitude < 0.0001f) return false;
+            direction.Normalize();
+            power = Mathf.Clamp01(power);
+            if (power < 0.035f) return false;
             Rigidbody ball = currentLevel.ball;
             Vector3 velocity = ball.linearVelocity;
             velocity.x = 0f;
             velocity.z = 0f;
             ball.linearVelocity = velocity;
             ball.angularVelocity *= 0.15f;
-            ball.AddForce(aimDirection * Mathf.Lerp(1.1f, maximumImpulse, shotPower), ForceMode.Impulse);
+            ball.AddForce(direction * Mathf.Lerp(1.1f, maximumImpulse, power), ForceMode.Impulse);
             levelStrokes++;
             totalStrokes++;
             AudioManager.Instance?.PlayShotSfx();
+            OVRInput.SetControllerVibration(0.5f, 0.7f, OVRInput.Controller.RTouch);
+            OVRInput.SetControllerVibration(0.5f, 0.7f, OVRInput.Controller.LTouch);
+            return true;
         }
 
-        private bool CanTakeAction()
+        public bool CanTakeAction()
         {
             return currentLevel != null && !currentLevel.IsRevealing && !capturing && !levelComplete && currentLevel.ball.linearVelocity.magnitude <= playableSpeed;
-        }
-
-        private void TryRotateLevel(int direction)
-        {
-            if (dragging)
-            {
-                dragging = false;
-                aimingLine.enabled = false;
-            }
-
-            if (!CanTakeAction())
-            {
-                ShowFeedback("WAIT FOR THE BALL");
-                return;
-            }
-
-            Rigidbody ball = currentLevel.ball;
-            ball.linearVelocity = Vector3.zero;
-            ball.angularVelocity = Vector3.zero;
-            ball.isKinematic = true;
-            currentLevel.transform.Rotate(Vector3.up, direction * 45f, Space.World);
-            Physics.SyncTransforms();
-            ball.isKinematic = false;
-            AudioManager.Instance?.PlayRotationSfx();
-            ShowFeedback(direction < 0 ? "ROTATED LEFT" : "ROTATED RIGHT");
         }
 
         private void ResetBall(bool penalty)
@@ -335,6 +432,8 @@ namespace MinimalGolf
             dragging = false;
             if (aimingLine != null)
                 aimingLine.enabled = false;
+            shotPower = 0f;
+            aimDirection = Vector3.zero;
 
             Rigidbody ball = currentLevel.ball;
             ball.isKinematic = true;
@@ -345,21 +444,15 @@ namespace MinimalGolf
             ball.isKinematic = false;
             ball.linearVelocity = Vector3.zero;
             ball.angularVelocity = Vector3.zero;
-            CameraImpactShake.Instance?.ResetCameraPosition();
+            // Haptics instead of camera shake
+            OVRInput.SetControllerVibration(0.3f, 0.4f, OVRInput.Controller.LTouch);
+            OVRInput.SetControllerVibration(0.3f, 0.4f, OVRInput.Controller.RTouch);
 
             if (penalty)
             {
                 levelStrokes++;
                 totalStrokes++;
             }
-        }
-
-        private void ResetLevelWithPenalty()
-        {
-            ResetBall(true);
-            Physics.SyncTransforms();
-            currentLevel.revealAnimator?.PlayReveal();
-            ShowFeedback("RESET  +1 STROKE");
         }
 
         private IEnumerator CaptureBall()
@@ -369,7 +462,9 @@ namespace MinimalGolf
 
             capturing = true;
             dragging = false;
-            aimingLine.enabled = false;
+            if (aimingLine != null) aimingLine.enabled = false;
+            shotPower = 0f;
+            aimDirection = Vector3.zero;
             Rigidbody ball = currentLevel.ball;
             RigidbodyInterpolation previousInterpolation = ball.interpolation;
             ball.interpolation = RigidbodyInterpolation.None;
@@ -377,6 +472,7 @@ namespace MinimalGolf
             ball.angularVelocity = Vector3.zero;
             ball.isKinematic = true;
             AudioManager.Instance?.PlayHoleSfx();
+            OVRInput.SetControllerVibration(1f, 0.9f, OVRInput.Controller.RTouch);
 
             Vector3 startPosition = ball.position;
             Vector3 startScale = ball.transform.localScale;
@@ -384,8 +480,6 @@ namespace MinimalGolf
             Vector3 centeredPosition = new Vector3(holePosition.x, startPosition.y - 0.055f, holePosition.z);
             Vector3 centeredScale = startScale * 0.88f;
 
-            // Capture begins only once the ball fits inside the dark cup. Blend a small drop
-            // into the last bit of centering so it reads as falling, not being placed.
             const float centeringDuration = 0.10f;
             float elapsed = 0f;
             while (elapsed < centeringDuration)
@@ -441,16 +535,26 @@ namespace MinimalGolf
             capturing = false;
             dragging = false;
             courseComplete = false;
+            shotPower = 0f;
+            aimDirection = Vector3.zero;
 
             for (int i = 0; i < levels.Length; i++)
             {
                 levels[i].RestoreRuntimeTransform();
                 levels[i].gameObject.SetActive(i == currentLevelIndex);
+                if (i == currentLevelIndex)
+                {
+                    // Active level at VRCourseLevels origin (hierarchy already handles 1/10 scale)
+                    if (vrCourseLevels != null)
+                        levels[i].transform.SetParent(vrCourseLevels, false);
+                    levels[i].transform.localPosition = Vector3.zero;
+                    levels[i].transform.localRotation = Quaternion.identity;
+                }
             }
 
             currentLevel = levels[currentLevelIndex];
             currentLevel.gameObject.SetActive(true);
-            gameCamera.orthographicSize = currentLevel.cameraSize;
+            // Keep original cameraSize field for backwards compat but don't apply to VR camera
             ResetBall(false);
             Physics.SyncTransforms();
             currentLevel.revealAnimator?.PlayReveal();
@@ -474,257 +578,6 @@ namespace MinimalGolf
             feedbackUntil = Time.unscaledTime + duration;
         }
 
-        private void OnDestroy()
-        {
-            if (roundedTexture != null)
-                Destroy(roundedTexture);
-        }
-
-        private void EnsureStyles()
-        {
-            if (titleStyle != null)
-                return;
-
-            Font font = uiFont != null ? uiFont : GUI.skin.font;
-            titleStyle = CreateLabelStyle(font, 22, FontStyle.Bold, PaleText, TextAnchor.MiddleLeft);
-            headingStyle = CreateLabelStyle(font, 13, FontStyle.Bold, Accent, TextAnchor.MiddleLeft);
-            bodyStyle = CreateLabelStyle(font, 13, FontStyle.Normal, PaleText, TextAnchor.MiddleLeft);
-            smallStyle = CreateLabelStyle(font, 9, FontStyle.Normal, new Color(PaleText.r, PaleText.g, PaleText.b, 0.76f), TextAnchor.MiddleLeft);
-            centeredStyle = CreateLabelStyle(font, 11, FontStyle.Normal, PaleText, TextAnchor.MiddleCenter);
-            hugeStyle = CreateLabelStyle(font, 38, FontStyle.Bold, PaleText, TextAnchor.MiddleCenter);
-            eyebrowStyle = CreateLabelStyle(font, 9, FontStyle.Bold, new Color(PaleText.r, PaleText.g, PaleText.b, 0.62f), TextAnchor.MiddleLeft);
-            eyebrowRightStyle = new GUIStyle(eyebrowStyle) { alignment = TextAnchor.MiddleRight };
-            statLabelStyle = CreateLabelStyle(font, 8, FontStyle.Bold, new Color(PaleText.r, PaleText.g, PaleText.b, 0.58f), TextAnchor.MiddleCenter);
-            statValueStyle = CreateLabelStyle(font, 21, FontStyle.Bold, PaleText, TextAnchor.MiddleCenter);
-            darkCenteredStyle = CreateLabelStyle(font, 11, FontStyle.Bold, Ink, TextAnchor.MiddleCenter);
-            roundedPanelStyle = new GUIStyle
-            {
-                normal = { background = roundedTexture },
-                border = new RectOffset(11, 11, 11, 11)
-            };
-        }
-
-        private void OnGUI()
-        {
-            EnsureStyles();
-            float scale = Mathf.Clamp(Screen.height / 500f, 1.35f, 2.1f);
-            Matrix4x4 previousMatrix = GUI.matrix;
-            Color previousColor = GUI.color;
-            GUI.matrix = Matrix4x4.Scale(new Vector3(scale, scale, 1f));
-            float width = Screen.width / scale;
-            float height = Screen.height / scale;
-
-            if (courseComplete)
-            {
-                DrawCourseComplete(width, height);
-                GUI.matrix = previousMatrix;
-                GUI.color = previousColor;
-                return;
-            }
-
-            if (currentLevel == null)
-            {
-                GUI.matrix = previousMatrix;
-                GUI.color = previousColor;
-                return;
-            }
-
-            DrawIdentityCard();
-            DrawProgressCard(width);
-            DrawStatsCard(width);
-
-            if (dragging)
-                DrawPowerMeter(width, height);
-
-            if (Time.unscaledTime < feedbackUntil)
-                DrawFeedback(width, height);
-
-            Rect legend = new Rect(width * 0.5f - 248, height - 42, 496, 27);
-            DrawPanel(legend, PanelSoftColor);
-            GUI.Label(legend, "DRAG  PUTT     ← →  ROTATE COURSE     R  RESET", centeredStyle);
-
-            GUI.matrix = previousMatrix;
-            GUI.color = previousColor;
-        }
-
-        private void DrawIdentityCard()
-        {
-            Rect card = new Rect(18, 16, 286, 78);
-            DrawPanel(card, PanelColor);
-            DrawRect(new Rect(card.x + 9, card.y + 12, 5, 54), OrangeAccent);
-            GUI.Label(new Rect(card.x + 27, card.y + 10, 241, 29), "MINIMAL GOLF", titleStyle);
-            GUI.Label(new Rect(card.x + 28, card.y + 39, 128, 13), "CURRENT COURSE", eyebrowStyle);
-            GUI.Label(
-                new Rect(card.x + 148, card.y + 39, 120, 13),
-                "LEVEL " + (currentLevelIndex + 1) + " / " + levels.Length,
-                eyebrowRightStyle);
-            GUI.Label(new Rect(card.x + 28, card.y + 52, 240, 18), currentLevel.levelName, headingStyle);
-        }
-
-        private void DrawProgressCard(float width)
-        {
-            Rect card = new Rect(width * 0.5f - 99, 18, 198, 48);
-            DrawPanel(card, PanelSoftColor);
-            GUI.Label(new Rect(card.x, card.y + 3, card.width, 14), "COURSE PROGRESS", statLabelStyle);
-
-            float gap = levels.Length > 6 ? 4f : 7f;
-            float blockWidth = Mathf.Min(24f, (card.width - 30f - gap * Mathf.Max(0, levels.Length - 1)) / levels.Length);
-            float totalWidth = levels.Length * blockWidth + Mathf.Max(0, levels.Length - 1) * gap;
-            float startX = card.x + (card.width - totalWidth) * 0.5f;
-            for (int i = 0; i < levels.Length; i++)
-            {
-                bool current = i == currentLevelIndex;
-                float blockHeight = current ? 8f : 5f;
-                Color color = i < currentLevelIndex
-                    ? Seafoam
-                    : current
-                        ? OrangeAccent
-                        : new Color(PaleText.r, PaleText.g, PaleText.b, 0.18f);
-                DrawRect(new Rect(startX + i * (blockWidth + gap), card.y + 29f - blockHeight * 0.5f, blockWidth, blockHeight), color);
-            }
-        }
-
-        private void DrawStatsCard(float width)
-        {
-            Rect card = new Rect(width - 210, 16, 192, 78);
-            DrawPanel(card, PanelColor);
-            const float cellWidth = 88f;
-            DrawStat(new Rect(card.x + 7, card.y + 7, cellWidth, 64), "STROKES", levelStrokes.ToString(), OrangeAccent);
-            DrawRect(new Rect(card.x + 99, card.y + 15, 1, 48), new Color(PaleText.r, PaleText.g, PaleText.b, 0.13f));
-            DrawStat(new Rect(card.x + 101, card.y + 7, cellWidth, 64), "PAR", currentLevel.par.ToString(), Gold);
-        }
-
-        private void DrawStat(Rect rect, string label, string value, Color valueColor)
-        {
-            GUI.Label(new Rect(rect.x, rect.y + 2, rect.width, 14), label, statLabelStyle);
-            Color previousColor = statValueStyle.normal.textColor;
-            statValueStyle.normal.textColor = valueColor;
-            GUI.Label(new Rect(rect.x, rect.y + 17, rect.width, 38), value, statValueStyle);
-            statValueStyle.normal.textColor = previousColor;
-        }
-
-        private void DrawPowerMeter(float width, float height)
-        {
-            Rect panel = new Rect(width * 0.5f - 165, height - 118, 330, 62);
-            DrawPanel(panel, PanelColor);
-            GUI.Label(new Rect(panel.x + 15, panel.y + 7, 180, 15), "PUTT STRENGTH", eyebrowStyle);
-
-            GUIStyle percentageStyle = new GUIStyle(eyebrowStyle) { alignment = TextAnchor.MiddleRight };
-            percentageStyle.normal.textColor = PaleText;
-            GUI.Label(new Rect(panel.x + 220, panel.y + 7, 94, 15), Mathf.RoundToInt(shotPower * 100f) + "%", percentageStyle);
-
-            const int segments = 12;
-            const float gap = 4f;
-            float available = panel.width - 30f;
-            float segmentWidth = (available - gap * (segments - 1)) / segments;
-            Color powerColor = shotPower < 0.55f
-                ? Color.Lerp(Seafoam, Gold, shotPower / 0.55f)
-                : Color.Lerp(Gold, OrangeAccent, (shotPower - 0.55f) / 0.45f);
-            for (int i = 0; i < segments; i++)
-            {
-                bool filled = shotPower >= (i + 1f) / segments;
-                Color color = filled ? powerColor : new Color(PaleText.r, PaleText.g, PaleText.b, 0.13f);
-                DrawRect(new Rect(panel.x + 15 + i * (segmentWidth + gap), panel.y + 32, segmentWidth, 12), color);
-            }
-        }
-
-        private void DrawFeedback(float width, float height)
-        {
-            float alpha = Mathf.Clamp01((feedbackUntil - Time.unscaledTime) * 3.2f);
-            Rect messageRect = new Rect(width * 0.5f - 190, height * 0.19f, 380, 44);
-            DrawPanel(messageRect, new Color(WarmCream.r, WarmCream.g, WarmCream.b, 0.96f * alpha));
-            DrawRect(new Rect(messageRect.x + 8, messageRect.y + 8, 5, messageRect.height - 16), new Color(OrangeAccent.r, OrangeAccent.g, OrangeAccent.b, alpha));
-            Color previous = darkCenteredStyle.normal.textColor;
-            darkCenteredStyle.normal.textColor = new Color(Ink.r, Ink.g, Ink.b, alpha);
-            GUI.Label(new Rect(messageRect.x + 18, messageRect.y, messageRect.width - 26, messageRect.height), feedback, darkCenteredStyle);
-            darkCenteredStyle.normal.textColor = previous;
-        }
-
-        private void DrawCourseComplete(float width, float height)
-        {
-            DrawRect(new Rect(0, 0, width, height), new Color(Ink.r, Ink.g, Ink.b, 0.94f));
-            Rect card = new Rect(width * 0.5f - 245, height * 0.5f - 142, 490, 284);
-            DrawPanel(card, new Color(0.075f, 0.19f, 0.22f, 0.98f));
-
-            float blockX = card.x + card.width * 0.5f - 64f;
-            DrawRect(new Rect(blockX, card.y + 25, 36, 7), Seafoam);
-            DrawRect(new Rect(blockX + 46, card.y + 25, 36, 7), Gold);
-            DrawRect(new Rect(blockX + 92, card.y + 25, 36, 7), OrangeAccent);
-            GUI.Label(new Rect(card.x + 20, card.y + 48, card.width - 40, 54), "COURSE COMPLETE", hugeStyle);
-            GUI.Label(new Rect(card.x + 20, card.y + 112, card.width - 40, 18), "EIGHT SMALL COURSES • ONE GRAND SCORE", statLabelStyle);
-
-            Rect score = new Rect(card.x + 142, card.y + 146, card.width - 284, 58);
-            DrawPanel(score, WarmCream);
-            GUIStyle scoreStyle = new GUIStyle(statValueStyle) { alignment = TextAnchor.MiddleCenter };
-            scoreStyle.normal.textColor = Ink;
-            GUI.Label(new Rect(score.x, score.y + 1, score.width, 34), totalStrokes.ToString(), scoreStyle);
-            GUIStyle darkLabelStyle = new GUIStyle(statLabelStyle);
-            darkLabelStyle.normal.textColor = Ink;
-            GUI.Label(new Rect(score.x, score.y + 32, score.width, 17), "TOTAL STROKES", darkLabelStyle);
-
-            Rect prompt = new Rect(card.x + 88, card.y + 228, card.width - 176, 32);
-            DrawPanel(prompt, OrangeAccent);
-            GUI.Label(prompt, "ENTER OR SPACE  •  PLAY AGAIN", darkCenteredStyle);
-        }
-
-        private GUIStyle CreateLabelStyle(Font font, int fontSize, FontStyle fontStyle, Color color, TextAnchor alignment)
-        {
-            GUIStyle style = new GUIStyle(GUI.skin.label)
-            {
-                font = font,
-                fontSize = fontSize,
-                fontStyle = fontStyle,
-                alignment = alignment,
-                clipping = TextClipping.Clip
-            };
-            style.normal.textColor = color;
-            return style;
-        }
-
-        private Texture2D CreateRoundedTexture(int size, float radius)
-        {
-            Texture2D texture = new Texture2D(size, size, TextureFormat.RGBA32, false)
-            {
-                name = "Minimal Golf Rounded UI",
-                filterMode = FilterMode.Bilinear,
-                wrapMode = TextureWrapMode.Clamp,
-                hideFlags = HideFlags.HideAndDontSave
-            };
-
-            Color[] pixels = new Color[size * size];
-            for (int y = 0; y < size; y++)
-            {
-                for (int x = 0; x < size; x++)
-                {
-                    float edgeX = Mathf.Min(x + 0.5f, size - x - 0.5f);
-                    float edgeY = Mathf.Min(y + 0.5f, size - y - 0.5f);
-                    float cornerX = Mathf.Max(radius - edgeX, 0f);
-                    float cornerY = Mathf.Max(radius - edgeY, 0f);
-                    float distance = Mathf.Sqrt(cornerX * cornerX + cornerY * cornerY);
-                    float alpha = Mathf.Clamp01(radius + 0.75f - distance);
-                    pixels[y * size + x] = new Color(1f, 1f, 1f, alpha);
-                }
-            }
-
-            texture.SetPixels(pixels);
-            texture.Apply(false, true);
-            return texture;
-        }
-
-        private void DrawPanel(Rect rect, Color color)
-        {
-            Color previous = GUI.color;
-            GUI.color = color;
-            GUI.Box(rect, GUIContent.none, roundedPanelStyle);
-            GUI.color = previous;
-        }
-
-        private void DrawRect(Rect rect, Color color)
-        {
-            Color previous = GUI.color;
-            GUI.color = color;
-            GUI.DrawTexture(rect, whiteTexture);
-            GUI.color = previous;
-        }
+        private void OnDestroy() { }
     }
 }

@@ -4,7 +4,6 @@ namespace MinimalGolf
 {
     [DisallowMultipleComponent]
     [RequireComponent(typeof(AudioSource))]
-    [RequireComponent(typeof(AudioListener))]
     public sealed class AudioManager : MonoBehaviour
     {
         public static AudioManager Instance { get; private set; }
@@ -43,6 +42,27 @@ namespace MinimalGolf
 
             EnsureAudioSources();
             ApplySourceSettings();
+            // VR: ensure AudioListener is only on CenterEyeAnchor
+            EnsureSingleListener();
+        }
+
+        private void EnsureSingleListener()
+        {
+            var rig = FindFirstObjectByType<OVRCameraRig>();
+            if (rig != null && rig.centerEyeAnchor != null)
+            {
+                if (GetComponent<AudioListener>() != null && rig.centerEyeAnchor.GetComponent<AudioListener>() == null)
+                {
+                    // Move listener to eye anchor
+                    Destroy(GetComponent<AudioListener>());
+                    if (rig.centerEyeAnchor.GetComponent<AudioListener>() == null)
+                        rig.centerEyeAnchor.gameObject.AddComponent<AudioListener>();
+                }
+                else if (GetComponent<AudioListener>() != null && rig.centerEyeAnchor.GetComponent<AudioListener>() != null)
+                {
+                    Destroy(GetComponent<AudioListener>());
+                }
+            }
         }
 
         private void Start()
@@ -203,7 +223,8 @@ namespace MinimalGolf
 
             sfxSource.playOnAwake = false;
             sfxSource.loop = false;
-            sfxSource.spatialBlend = 0f;
+            // For VR, keep SFX 2D for UI clarity but allow 3D for ball impacts if needed
+            sfxSource.spatialBlend = 0.2f;
             sfxSource.volume = sfxVolume;
             sfxSource.priority = 32;
         }

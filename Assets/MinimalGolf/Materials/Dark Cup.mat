@@ -32,7 +32,7 @@ Material:
     m_Floats:
     - _AmbientStrength: 0.34
     - _OutlineEnabled: 1
-    - _OutlineWidth: 0.018
+    - _OutlineWidth: 0.002
     - _RimPower: 3.8
     - _RimStrength: 0.06
     - _ShadowSoftness: 0.035

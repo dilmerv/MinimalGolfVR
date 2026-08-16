@@ -56,7 +56,8 @@ namespace MinimalGolfEditor
             Scene scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
             scene.name = "MinimalGolf";
 
-            Camera camera = CreateEnvironment(existingCameraShakeSettings);
+            OVRCameraRig rig = CreateVREnvironment(existingCameraShakeSettings);
+            Camera camera = rig != null && rig.centerEyeAnchor != null ? rig.centerEyeAnchor.GetComponent<Camera>() : null;
             MiniGolfLevel level1 = CreateWarmUp();
             MiniGolfLevel level2 = CreateGarden();
             MiniGolfLevel level3 = CreateWindmillWay();
@@ -90,17 +91,28 @@ namespace MinimalGolfEditor
             MinimalGolfGame game = systems.AddComponent<MinimalGolfGame>();
             if (!string.IsNullOrEmpty(existingGameSettings))
                 EditorJsonUtility.FromJsonOverwrite(existingGameSettings, game);
+            // Override VR anchor to new 1/10 scale per user request (was 0.42 @ 1.3/-0.85, now 0.042 @ 0.65/-0.45)
+            game.vrAnchorLocalPosition = new Vector3(0f, -0.45f, 0.65f);
+            game.vrAnchorLocalScale = new Vector3(0.042f, 0.042f, 0.042f);
 
             game.levels = new[] { level1, level2, level3, level4, level5, level6, level7, level8 };
             game.gameCamera = camera;
+            game.ovrRig = rig;
+            if (rig != null && rig.trackingSpace != null)
+            {
+                Transform anchor = rig.trackingSpace.Find("VRCourseAnchor");
+                if (anchor != null) game.vrCourseAnchor = anchor;
+            }
             game.uiFont = AssetDatabase.LoadAssetAtPath<Font>(UiFontPath);
 
-            CustomGameCursor customCursor = systems.AddComponent<CustomGameCursor>();
-            customCursor.Configure(
-                AssetDatabase.LoadAssetAtPath<Texture2D>(CursorTexturePath),
-                new Vector2(10f, 5f));
+            // VR: no CustomGameCursor - standalone cursor removed per spec
+            // VR Golf UI will be created dynamically by VRGolfUI; also add component here for builder completeness
+            systems.AddComponent<VRGolfUI>();
+            // Attach placement helper to anchor
+            if (game.vrCourseAnchor != null && game.vrCourseAnchor.GetComponent<VRCoursePlacement>() == null)
+                game.vrCourseAnchor.gameObject.AddComponent<VRCoursePlacement>();
 
-            CreateAudioManager();
+            CreateAudioManagerVR(rig);
 
             GameObject lineObject = new GameObject("Aiming Line");
             lineObject.transform.SetParent(systems.transform, false);
@@ -116,6 +128,9 @@ namespace MinimalGolfEditor
             line.receiveShadows = false;
             line.enabled = false;
             game.aimingLine = line;
+
+            // VR Clubs for left/right hands
+            CreateVRClubs(rig, game, line);
 
             level1.gameObject.SetActive(true);
             level2.gameObject.SetActive(true);
@@ -141,7 +156,8 @@ namespace MinimalGolfEditor
             PlayerSettings.defaultScreenHeight = 720;
             PlayerSettings.resizableWindow = true;
 
-            EditorSceneManager.SaveScene(scene, ScenePath);
+            bool saved = EditorSceneManager.SaveScene(scene, ScenePath);
+            Debug.Log($"[Build] SaveScene {ScenePath} saved={saved} scene={scene.name} path={scene.path}");
             EditorBuildSettings.scenes = new[] { new EditorBuildSettingsScene(ScenePath, true) };
             AssetDatabase.SaveAssets();
             AssetDatabase.Refresh();
@@ -340,28 +356,52 @@ namespace MinimalGolfEditor
             }
         }
 
-        private static Camera CreateEnvironment(string cameraShakeSettings)
+        private static OVRCameraRig CreateVREnvironment(string cameraShakeSettings)
         {
-            GameObject cameraObject = new GameObject("ISOMETRIC CAMERA");
-            cameraObject.tag = "MainCamera";
-            cameraObject.transform.SetPositionAndRotation(
-                new Vector3(5.1f, 5.65f, -6.9f),
-                Quaternion.Euler(29.9f, 321f, 0f));
-            Camera camera = cameraObject.AddComponent<Camera>();
-            camera.orthographic = true;
-            camera.orthographicSize = 6.4f;
-            camera.nearClipPlane = 0.01f;
-            camera.farClipPlane = 80f;
-            camera.clearFlags = CameraClearFlags.SolidColor;
-            camera.backgroundColor = Hex("779EBE");
-            camera.allowHDR = true;
-            camera.allowMSAA = true;
-            UniversalAdditionalCameraData cameraData = cameraObject.AddComponent<UniversalAdditionalCameraData>();
-            cameraData.renderPostProcessing = false;
-            cameraData.renderShadows = false;
-            CameraImpactShake cameraShake = cameraObject.AddComponent<CameraImpactShake>();
+            // Remove any existing main camera rig
+            foreach (var cam in UnityEngine.Object.FindObjectsByType<Camera>(FindObjectsSortMode.None))
+            {
+                if (cam.gameObject.name == "ISOMETRIC CAMERA") UnityEngine.Object.DestroyImmediate(cam.gameObject);
+            }
+            GameObject rigGO = new GameObject("OVRCameraRig");
+            OVRCameraRig rig = rigGO.AddComponent<OVRCameraRig>();
+            OVRManager manager = rigGO.AddComponent<OVRManager>();
+            manager.trackingOriginType = OVRManager.TrackingOrigin.FloorLevel;
+            // Real SDK anchors are auto-created; fetch camera from anchor
+            Camera centerCam = rig.centerEyeAnchor != null ? rig.centerEyeAnchor.GetComponent<Camera>() : null;
+            if (centerCam != null)
+            {
+                centerCam.tag = "MainCamera";
+                centerCam.clearFlags = CameraClearFlags.SolidColor;
+                centerCam.backgroundColor = Hex("779EBE");
+                centerCam.nearClipPlane = 0.01f;
+                centerCam.farClipPlane = 80f;
+                centerCam.allowHDR = true;
+                centerCam.allowMSAA = true;
+                var camData = centerCam.GetComponent<UniversalAdditionalCameraData>();
+                if (camData == null) camData = centerCam.gameObject.AddComponent<UniversalAdditionalCameraData>();
+                camData.renderPostProcessing = false;
+                camData.renderShadows = false;
+                if (centerCam.GetComponent<AudioListener>() == null)
+                    centerCam.gameObject.AddComponent<AudioListener>();
+            }
+            // VRCourseAnchor at tabletop height, sibling to OVRCameraRig (world space, not under TrackingSpace)
+            GameObject anchorGO = new GameObject("VRCourseAnchor");
+            anchorGO.transform.localPosition = new Vector3(0f, 0.75f, 0.65f);
+            anchorGO.transform.localScale = Vector3.one;
+            GameObject levelsGO = new GameObject("VRCourseLevels");
+            levelsGO.transform.SetParent(anchorGO.transform, false);
+            levelsGO.transform.localPosition = Vector3.zero;
+            levelsGO.transform.localRotation = Quaternion.identity;
+            levelsGO.transform.localScale = new Vector3(0.042f, 0.042f, 0.042f);
+            VRCoursePlacement placement = anchorGO.AddComponent<VRCoursePlacement>();
+            placement.forwardDistance = 0.65f;
+            placement.heightBelowEye = 0.85f;
+            placement.tableScale = 0.042f;
+            // Camera impact shake now on rig for haptics, not on eye
+            CameraImpactShake shake = rigGO.AddComponent<CameraImpactShake>();
             if (!string.IsNullOrEmpty(cameraShakeSettings))
-                EditorJsonUtility.FromJsonOverwrite(cameraShakeSettings, cameraShake);
+                EditorJsonUtility.FromJsonOverwrite(cameraShakeSettings, shake);
 
             GameObject lightObject = new GameObject("WARM SUN");
             lightObject.transform.rotation = Quaternion.Euler(48f, -32f, 0f);
@@ -374,8 +414,123 @@ namespace MinimalGolfEditor
             light.shadowBias = 0.045f;
             light.shadowNormalBias = 0.35f;
 
-            return camera;
+            return rig;
         }
+
+        private static void CreateAudioManagerVR(OVRCameraRig rig)
+        {
+            string[] guids = AssetDatabase.FindAssets("t:AudioClip", new[] { MusicFolder });
+            string[] paths = new string[guids.Length];
+            for (int i = 0; i < guids.Length; i++)
+                paths[i] = AssetDatabase.GUIDToAssetPath(guids[i]);
+
+            System.Array.Sort(paths, System.StringComparer.OrdinalIgnoreCase);
+            AudioClip[] tracks = new AudioClip[paths.Length];
+            for (int i = 0; i < paths.Length; i++)
+                tracks[i] = AssetDatabase.LoadAssetAtPath<AudioClip>(paths[i]);
+
+            GameObject audioObject = new GameObject("AUDIO MANAGER");
+            // AudioListener is on CenterEyeAnchor, not here
+            AudioManager audioManager = audioObject.AddComponent<AudioManager>();
+            audioManager.Configure(tracks, 0.32f);
+            AudioClip[] shotClips =
+            {
+                LoadSfx("Golf_Ball_Hit_01"),
+                LoadSfx("Golf_Ball_Hit_02"),
+                LoadSfx("Golf_Ball_Hit_03")
+            };
+            AudioClip[] holeClips =
+            {
+                LoadSfx("Ball_Fall_To_The_Empty_Hole_01"),
+                LoadSfx("Ball_Fall_To_The_Empty_Hole_02"),
+                LoadSfx("Ball_Fall_To_The_Empty_Hole_03")
+            };
+            AudioClip collisionClip = LoadSfx("Pitching_Wedge_Shot_Hard_01");
+            audioManager.ConfigureSfx(shotClips, holeClips, collisionClip, 0.70f);
+            audioManager.ConfigureRotationSfx(LoadSfx("Classic_Woosh"));
+
+            if (tracks.Length == 0)
+                Debug.LogWarning("No background music was found under " + MusicFolder + ".");
+            if (collisionClip == null)
+                Debug.LogWarning("Pitching_Wedge_Shot_Hard_01 was not found under " + SfxFolder + ".");
+        }
+
+        private static void CreateVRClubs(OVRCameraRig rig, MinimalGolfGame game, LineRenderer line)
+        {
+            if (rig == null) return;
+            // Use Controller anchors (Touch) if present, otherwise Hand anchors
+            Transform leftAnchor = rig.leftControllerAnchor != null ? rig.leftControllerAnchor : rig.leftHandAnchor;
+            Transform rightAnchor = rig.rightControllerAnchor != null ? rig.rightControllerAnchor : rig.rightHandAnchor;
+
+            // Instantiate controller visuals from SDK prefab so user sees controllers in VR
+            // The prefab is at Packages/com.meta.xr.sdk.core/Prefabs/OVRControllerPrefab.prefab (GUID d9809c5e8418bb047bf2c8ba1d1a2cec)
+            // Use InstantiatePrefab so it is correctly linked and scaled
+            if (leftAnchor != null)
+            {
+                string ctrlGuid = "d9809c5e8418bb047bf2c8ba1d1a2cec";
+                string ctrlPath = AssetDatabase.GUIDToAssetPath(ctrlGuid);
+                if (!string.IsNullOrEmpty(ctrlPath))
+                {
+                    var ctrlPrefab = AssetDatabase.LoadAssetAtPath<GameObject>(ctrlPath);
+                    if (ctrlPrefab != null)
+                    {
+                        var leftCtrl = (GameObject)PrefabUtility.InstantiatePrefab(ctrlPrefab);
+                        leftCtrl.name = "OVRController Left";
+                        leftCtrl.transform.SetParent(leftAnchor, false);
+                        leftCtrl.transform.localPosition = Vector3.zero;
+                        leftCtrl.transform.localRotation = Quaternion.identity;
+                    }
+                }
+                GameObject leftClub = new GameObject("VR Club Left");
+                leftClub.transform.SetParent(leftAnchor, false);
+                leftClub.transform.localPosition = Vector3.zero;
+                leftClub.transform.localRotation = Quaternion.identity;
+                var col = leftClub.AddComponent<SphereCollider>();
+                col.isTrigger = true;
+                col.radius = 0.035f;
+                var club = leftClub.AddComponent<VRGolfClub>();
+                club.controller = OVRInput.Controller.LTouch;
+                club.game = game;
+                club.overlapRadius = 0.11f;
+                // No visible TipVisual - controller model is the visual, club is invisible collider
+            }
+            if (rightAnchor != null)
+            {
+                string ctrlGuid = "d9809c5e8418bb047bf2c8ba1d1a2cec";
+                string ctrlPath = AssetDatabase.GUIDToAssetPath(ctrlGuid);
+                if (!string.IsNullOrEmpty(ctrlPath))
+                {
+                    var ctrlPrefab = AssetDatabase.LoadAssetAtPath<GameObject>(ctrlPath);
+                    if (ctrlPrefab != null)
+                    {
+                        var rightCtrl = (GameObject)PrefabUtility.InstantiatePrefab(ctrlPrefab);
+                        rightCtrl.name = "OVRController Right";
+                        rightCtrl.transform.SetParent(rightAnchor, false);
+                        rightCtrl.transform.localPosition = Vector3.zero;
+                        rightCtrl.transform.localRotation = Quaternion.identity;
+                    }
+                }
+                GameObject rightClub = new GameObject("VR Club Right");
+                rightClub.transform.SetParent(rightAnchor, false);
+                rightClub.transform.localPosition = Vector3.zero;
+                rightClub.transform.localRotation = Quaternion.identity;
+                var col = rightClub.AddComponent<SphereCollider>();
+                col.isTrigger = true;
+                col.radius = 0.035f;
+                var club = rightClub.AddComponent<VRGolfClub>();
+                club.controller = OVRInput.Controller.RTouch;
+                club.game = game;
+                club.overlapRadius = 0.11f;
+            }
+        }
+
+        // Keep old CreateEnvironment for backwards compat if needed but redirect
+        private static Camera CreateEnvironment(string cameraShakeSettings)
+        {
+            var rig = CreateVREnvironment(cameraShakeSettings);
+            return rig != null && rig.centerEyeAnchor != null ? rig.centerEyeAnchor.GetComponent<Camera>() : null;
+        }
+
 
         private static MiniGolfLevel CreateWarmUp()
         {

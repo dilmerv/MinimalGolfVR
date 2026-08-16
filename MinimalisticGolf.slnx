@@ -1,6 +1,6 @@
 ﻿<Solution>
   <Project Path="MinimalGolf.csproj" />
   <Project Path="Assembly-CSharp-Editor.csproj" />
-  <Project Path="MinimalGolf.Editor.csproj" />
   <Project Path="MinimalGolf.Tests.csproj" />
+  <Project Path="MinimalGolf.Editor.csproj" />
 </Solution>

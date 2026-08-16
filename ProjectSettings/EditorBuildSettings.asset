@@ -9,4 +9,8 @@ EditorBuildSettings:
     path: Assets/Scenes/MinimalGolf.unity
     guid: 42eb6f63d69274ace91709b16121f701
   m_configObjects:
+    Unity.XR.Oculus.Settings: {fileID: 11400000, guid: 0d845edb4aac7449ab84c5aec26dc2aa, type: 2}
     com.unity.input.settings.actions: {fileID: -944628639613478452, guid: 052faaac586de48259a63d0c4782560b, type: 3}
+    com.unity.xr.arfoundation.simulation_settings: {fileID: 11400000, guid: 037e3ff6bcd0648d39b088220c6a5935, type: 2}
+    com.unity.xr.management.loader_settings: {fileID: 11400000, guid: f56df090e41ef4838bbf7463dd96ce27, type: 2}
+    com.unity.xr.openxr.settings4: {fileID: 11400000, guid: 70aefc4b91b0f4985952d0ec0d8deb88, type: 2}

@@ -1,7 +1,7 @@
 {
     "name": "MinimalGolf.Editor",
     "rootNamespace": "MinimalGolfEditor",
-    "references": ["MinimalGolf", "Unity.RenderPipelines.Universal.Runtime"],
+    "references": ["MinimalGolf", "Unity.RenderPipelines.Universal.Runtime", "Oculus.VR"],
     "includePlatforms": ["Editor"],
     "excludePlatforms": [],
     "allowUnsafeCode": false,
