@@ -14,6 +14,19 @@ namespace MinimalGolf
     [ExecuteAlways]
     public class VRPreviewMode : MonoBehaviour
     {
+        [SerializeField]
+        private Vector3 previewCenterPos = new Vector3(0f, 1.65f, -0.05f);
+        [SerializeField]
+        private Quaternion previewCenterRot = Quaternion.Euler(35f, 0f, 0f);
+        [SerializeField]
+        private Vector3 previewLeftPos = new Vector3(-0.20f, 1.25f, 0.3f);
+        [SerializeField]
+        private Quaternion previewLeftRot = Quaternion.Euler(0f, 30f, 0f);
+        [SerializeField]
+        private Vector3 previewRightPos = new Vector3(0.20f, 1.25f, 0.3f);
+        [SerializeField]
+        private Quaternion previewRightRot = Quaternion.Euler(0f, -30f, 0f);
+
         private Transform centerEye;
         private Transform leftAnchor;
         private Transform rightAnchor;
@@ -25,14 +38,7 @@ namespace MinimalGolf
         private readonly Quaternion vrLeftRot = Quaternion.identity;
         private readonly Vector3 vrRightPos = new Vector3(0f, 0f, 0f);
         private readonly Quaternion vrRightRot = Quaternion.identity;
-
-        private readonly Vector3 previewCenterPos = new Vector3(0f, 1.65f, -0.05f);
-        private readonly Quaternion previewCenterRot = Quaternion.Euler(35f, 0f, 0f);
-        private readonly Vector3 previewLeftPos = new Vector3(-0.20f, 1.25f, 0.3f);
-        private readonly Quaternion previewLeftRot = Quaternion.Euler(0f, 30f, 0f);
-        private readonly Vector3 previewRightPos = new Vector3(0.20f, 1.25f, 0.3f);
-        private readonly Quaternion previewRightRot = Quaternion.Euler(0f, -30f, 0f);
-
+    
         private GameObject leftControllerRoot;
         private GameObject rightControllerRoot;
         private bool isPreviewActive;
