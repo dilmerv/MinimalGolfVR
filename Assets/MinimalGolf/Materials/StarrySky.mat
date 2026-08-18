@@ -28,7 +28,7 @@ Material:
     - _CometFrequency: 0.025
     - _CometIntensity: 1.11
     - _CometLength: 0.35
-    - _CometSharpness: 36.7
+    - _CometSharpness: 70
     - _CometSpeed: 0.22
     - _CometTailFalloff: 8
     - _EnableComets: 1
@@ -39,7 +39,7 @@ Material:
     - _StarIntensity: 0.81
     - _StarMinBrightness: 0.328
     - _StarRotationSpeed: 0.06
-    - _StarSharpness: 101
+    - _StarSharpness: 200
     - _TimeScale: 1
     - _TwinkleAmount: 0.35
     - _TwinkleSpeed: 1.2
