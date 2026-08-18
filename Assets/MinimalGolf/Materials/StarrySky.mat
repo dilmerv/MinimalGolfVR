@@ -1,0 +1,52 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!21 &2100000
+Material:
+  serializedVersion: 8
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_Name: StarrySky
+  m_Shader: {fileID: 4800000, guid: c2cf47991c1e4c80bf5f736f719fc916, type: 3}
+  m_Parent: {fileID: 0}
+  m_ModifiedSerializedProperties: 0
+  m_ValidKeywords: []
+  m_InvalidKeywords: []
+  m_LightmapFlags: 4
+  m_EnableInstancingVariants: 0
+  m_DoubleSidedGI: 0
+  m_CustomRenderQueue: -1
+  stringTagMap: {}
+  disabledShaderPasses: []
+  m_LockedProperties: 
+  m_SavedProperties:
+    serializedVersion: 3
+    m_TexEnvs: []
+    m_Ints: []
+    m_Floats:
+    - _CometFrequency: 0.025
+    - _CometIntensity: 1.11
+    - _CometLength: 0.35
+    - _CometSharpness: 36.7
+    - _CometSpeed: 0.22
+    - _CometTailFalloff: 8
+    - _EnableComets: 1
+    - _HorizonFalloff: 0.01
+    - _HorizonHeight: -0.182
+    - _StarColorVariation: 0.61
+    - _StarDensity: 4
+    - _StarIntensity: 0.81
+    - _StarMinBrightness: 0.328
+    - _StarRotationSpeed: 0.06
+    - _StarSharpness: 101
+    - _TimeScale: 1
+    - _TwinkleAmount: 0.35
+    - _TwinkleSpeed: 1.2
+    m_Colors:
+    - _CometColor: {r: 0.85, g: 0.95, b: 1, a: 1}
+    - _HorizonColor: {r: 0.69896924, g: 0.7830189, b: 0.6759078, a: 1}
+    - _StarColor: {r: 1, g: 1, b: 1, a: 1}
+    - _ZenithColor: {r: 0.061676744, g: 0.08831775, b: 0.16981131, a: 1}
+  m_BuildTextureStacks: []
+  m_AllowLocking: 1

@@ -711,7 +711,47 @@ namespace MinimalGolf
             if (resetTotals)
                 totalStrokes = 0;
 
-            currentLevelIndex = Mathf.Clamp(index, 0, levels.Length - 1);
+            int newIndex = Mathf.Clamp(index, 0, levels.Length - 1);
+            MiniGolfLevel newLevel = levels[newIndex];
+            MiniGolfLevel previousLevel = currentLevel;
+
+            // Swap positions: new level takes previous level's spot, previous takes new level's spot
+            // Use authored editor positions - no hard-coded Vector3.zero
+            if (previousLevel != null && newLevel != null && previousLevel != newLevel)
+            {
+                // Ensure both are under vrCourseLevels for consistent local space
+                if (vrCourseLevels != null)
+                {
+                    if (previousLevel.transform.parent != vrCourseLevels)
+                        previousLevel.transform.SetParent(vrCourseLevels, true);
+                    if (newLevel.transform.parent != vrCourseLevels)
+                        newLevel.transform.SetParent(vrCourseLevels, true);
+                }
+
+                Vector3 prevPos = previousLevel.transform.localPosition;
+                Quaternion prevRot = previousLevel.transform.localRotation;
+                Vector3 nextPos = newLevel.transform.localPosition;
+                Quaternion nextRot = newLevel.transform.localRotation;
+
+                previousLevel.transform.localPosition = nextPos;
+                previousLevel.transform.localRotation = nextRot;
+                newLevel.transform.localPosition = prevPos;
+                newLevel.transform.localRotation = prevRot;
+            }
+            else if (previousLevel == null)
+            {
+                // First load - keep authored positions, just ensure all levels are under vrCourseLevels
+                if (vrCourseLevels != null)
+                {
+                    for (int i = 0; i < levels.Length; i++)
+                    {
+                        if (levels[i].transform.parent != vrCourseLevels)
+                            levels[i].transform.SetParent(vrCourseLevels, true);
+                    }
+                }
+            }
+
+            currentLevelIndex = newIndex;
             levelStrokes = 0;
             levelComplete = false;
             capturing = false;
@@ -720,20 +760,21 @@ namespace MinimalGolf
             shotPower = 0f;
             aimDirection = Vector3.zero;
 
+            // Keep all levels visible in distance for variety - only gameplay focuses on current
             for (int i = 0; i < levels.Length; i++)
             {
-                // Keep authored physics/material - only move active level to table origin so all levels overlap at same spot
-                if (i == currentLevelIndex)
+                levels[i].gameObject.SetActive(true);
+                // Hide balls on distant levels so only current level shows a ball
+                if (levels[i].ball != null)
                 {
-                    if (vrCourseLevels != null && levels[i].transform.parent != vrCourseLevels)
-                        levels[i].transform.SetParent(vrCourseLevels, false);
-                    levels[i].transform.localPosition = Vector3.zero;
-                    levels[i].transform.localRotation = Quaternion.identity;
+                    // Keep current level's ball active, hide others
+                    bool isCurrent = (i == newIndex);
+                    if (levels[i].ball.gameObject.activeSelf != isCurrent)
+                        levels[i].ball.gameObject.SetActive(isCurrent);
                 }
-                levels[i].gameObject.SetActive(i == currentLevelIndex);
             }
 
-            currentLevel = levels[currentLevelIndex];
+            currentLevel = newLevel;
             currentLevel.gameObject.SetActive(true);
             // Keep original cameraSize field for backwards compat but don't apply to VR camera
             if (golfBallPrefab != null)
