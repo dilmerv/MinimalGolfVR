@@ -1,7 +1,11 @@
 {
     "name": "MinimalGolf",
     "rootNamespace": "MinimalGolf",
-    "references": ["Unity.InputSystem", "Oculus.VR"],
+    "references": [
+        "Unity.InputSystem",
+        "Oculus.VR",
+        "Unity.TextMeshPro"
+    ],
     "includePlatforms": [],
     "excludePlatforms": [],
     "allowUnsafeCode": false,

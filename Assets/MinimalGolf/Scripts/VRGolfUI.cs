@@ -1,5 +1,6 @@
 using UnityEngine;
 using UnityEngine.UI;
+using TMPro;
 
 namespace MinimalGolf
 {
@@ -24,25 +25,25 @@ namespace MinimalGolf
         public Canvas courseCompleteCanvas;
 
         // Internal bindings — found automatically if null
-        private Text identityTitle;
-        private Text identityCourse;
-        private Text identityLevel;
-        private Text statsLabelStrokes;
-        private Text statsStrokes;
-        private Text statsLabelPar;
-        private Text statsPar;
-        private Text progressLabel;
+        private TMP_Text identityTitle;
+        private TMP_Text identityCourse;
+        private TMP_Text identityLevel;
+        private TMP_Text statsLabelStrokes;
+        private TMP_Text statsStrokes;
+        private TMP_Text statsLabelPar;
+        private TMP_Text statsPar;
+        private TMP_Text progressLabel;
         private Image[] progressPips;
-        private Text powerLabel;
-        private Text powerPercent;
+        private TMP_Text powerLabel;
+        private TMP_Text powerPercent;
         private Image[] powerSegments;
-        private Text feedbackText;
+        private TMP_Text feedbackText;
         private CanvasGroup feedbackGroup;
-        private Text courseCompleteTitle;
-        private Text courseCompleteSub;
-        private Text courseCompleteTotal;
-        private Text courseCompleteTotalLabel;
-        private Text courseCompleteButtonLabel;
+        private TMP_Text courseCompleteTitle;
+        private TMP_Text courseCompleteSub;
+        private TMP_Text courseCompleteTotal;
+        private TMP_Text courseCompleteTotalLabel;
+        private TMP_Text courseCompleteButtonLabel;
         private Button playAgainButton;
 
         private static readonly Color PanelColor = new Color(0.055f, 0.14f, 0.19f, 0.90f);
@@ -112,8 +113,8 @@ namespace MinimalGolf
             }
             if (powerCanvas != null)
             {
-                if (powerLabel == null) powerLabel = powerCanvas.transform.Find("Label")?.GetComponent<Text>();
-                if (powerPercent == null) powerPercent = powerCanvas.transform.Find("Percent")?.GetComponent<Text>();
+                if (powerLabel == null) powerLabel = powerCanvas.transform.Find("Label")?.GetComponent<TMP_Text>();
+                if (powerPercent == null) powerPercent = powerCanvas.transform.Find("Percent")?.GetComponent<TMP_Text>();
                 if (powerSegments == null)
                 {
                     var segs = new Image[12];
@@ -137,9 +138,9 @@ namespace MinimalGolf
                 if (courseCompleteTitle == null) courseCompleteTitle = FindTextRecursive(courseCompleteCanvas.transform, "Title");
                 if (courseCompleteSub == null) courseCompleteSub = FindTextRecursive(courseCompleteCanvas.transform, "Sub");
                 var box = courseCompleteCanvas.transform.Find("ScoreBox");
-                if (courseCompleteTotal == null && box != null) courseCompleteTotal = box.Find("Total")?.GetComponent<Text>();
-                if (courseCompleteTotalLabel == null && box != null) courseCompleteTotalLabel = box.Find("Label")?.GetComponent<Text>();
-                var btnLabel = courseCompleteCanvas.transform.Find("PlayAgain/Label")?.GetComponent<Text>();
+                if (courseCompleteTotal == null && box != null) courseCompleteTotal = box.Find("Total")?.GetComponent<TMP_Text>();
+                if (courseCompleteTotalLabel == null && box != null) courseCompleteTotalLabel = box.Find("Label")?.GetComponent<TMP_Text>();
+                var btnLabel = courseCompleteCanvas.transform.Find("PlayAgain/Label")?.GetComponent<TMP_Text>();
                 if (btnLabel != null) courseCompleteButtonLabel = btnLabel;
                 if (playAgainButton == null) playAgainButton = courseCompleteCanvas.transform.Find("PlayAgain")?.GetComponent<Button>();
                 if (playAgainButton != null && playAgainButton.onClick.GetPersistentEventCount() == 0)
@@ -147,12 +148,12 @@ namespace MinimalGolf
             }
         }
 
-        private Text FindTextRecursive(Transform root, string name)
+        private TMP_Text FindTextRecursive(Transform root, string name)
         {
             var t = root.Find(name);
             if (t != null)
             {
-                var txt = t.GetComponent<Text>();
+                var txt = t.GetComponent<TMP_Text>();
                 if (txt != null) return txt;
             }
             foreach (Transform child in root)
