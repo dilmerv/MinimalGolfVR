@@ -810,7 +810,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: -7511558181221131132, guid: d5e74fce6b4844409a3a5e26d8133f14, type: 3}
       propertyPath: m_CastShadows
-      value: 0
+      value: 1
       objectReference: {fileID: 0}
     - target: {fileID: -7511558181221131132, guid: d5e74fce6b4844409a3a5e26d8133f14, type: 3}
       propertyPath: m_ReceiveShadows
@@ -830,7 +830,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 4630957511536181541, guid: d5e74fce6b4844409a3a5e26d8133f14, type: 3}
       propertyPath: m_CastShadows
-      value: 0
+      value: 1
       objectReference: {fileID: 0}
     - target: {fileID: 4630957511536181541, guid: d5e74fce6b4844409a3a5e26d8133f14, type: 3}
       propertyPath: m_ReceiveShadows
@@ -11684,7 +11684,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: -7511558181221131132, guid: b7de242846ab5477e93e18dd06246242, type: 3}
       propertyPath: m_CastShadows
-      value: 0
+      value: 1
       objectReference: {fileID: 0}
     - target: {fileID: -7511558181221131132, guid: b7de242846ab5477e93e18dd06246242, type: 3}
       propertyPath: m_ReceiveShadows
@@ -15087,7 +15087,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: -7511558181221131132, guid: 5fe57d7d36f694e50bf3313528d84dd5, type: 3}
       propertyPath: m_CastShadows
-      value: 0
+      value: 1
       objectReference: {fileID: 0}
     - target: {fileID: -7511558181221131132, guid: 5fe57d7d36f694e50bf3313528d84dd5, type: 3}
       propertyPath: m_ReceiveShadows
@@ -17015,7 +17015,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: MinimalGolf::MinimalGolf.ProximityRevealVolume
   revealRadius: 0.05
-  edgeSoftness: 0.05
+  edgeSoftness: 0.02
   targetTag: RevealOccluder
   invertInside: 0
   enabledReveal: 1
@@ -18795,7 +18795,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: -7511558181221131132, guid: b7de242846ab5477e93e18dd06246242, type: 3}
       propertyPath: m_CastShadows
-      value: 0
+      value: 1
       objectReference: {fileID: 0}
     - target: {fileID: -7511558181221131132, guid: b7de242846ab5477e93e18dd06246242, type: 3}
       propertyPath: m_ReceiveShadows
@@ -18898,7 +18898,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: MinimalGolf::MinimalGolf.ProximityRevealVolume
   revealRadius: 0.05
-  edgeSoftness: 0.05
+  edgeSoftness: 0.02
   targetTag: RevealOccluder
   invertInside: 0
   enabledReveal: 1
@@ -19799,7 +19799,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: -7511558181221131132, guid: b7de242846ab5477e93e18dd06246242, type: 3}
       propertyPath: m_CastShadows
-      value: 0
+      value: 1
       objectReference: {fileID: 0}
     - target: {fileID: -7511558181221131132, guid: b7de242846ab5477e93e18dd06246242, type: 3}
       propertyPath: m_ReceiveShadows
@@ -21855,7 +21855,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: -7511558181221131132, guid: 5fe57d7d36f694e50bf3313528d84dd5, type: 3}
       propertyPath: m_CastShadows
-      value: 0
+      value: 1
       objectReference: {fileID: 0}
     - target: {fileID: -7511558181221131132, guid: 5fe57d7d36f694e50bf3313528d84dd5, type: 3}
       propertyPath: m_ReceiveShadows

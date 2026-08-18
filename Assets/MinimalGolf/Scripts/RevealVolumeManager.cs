@@ -113,9 +113,13 @@ namespace MinimalGolf
 
             if (active.Count == 0)
             {
-                // Restore any previously faded renderers when no volumes active
-                if (_taggedRenderers.Count > 0 && _scanTimer > 0.5f)
+                // Immediately restore when no grip/volumes active. The previous
+                // delayed restore (0.5s) kept whole-object MPB alpha at 0 while
+                // shader globals were already disabled, causing sticky invisibility
+                // and masking the per-pixel clip.
+                if (_taggedRenderers.Count > 0 || _mpbByRenderer.Count > 0)
                     RestoreAll();
+                _scanTimer = 0f;
                 return;
             }
 
@@ -255,12 +259,46 @@ namespace MinimalGolf
             if (changed) r.materials = mats;
         }
 
+        private static bool UsesRevealClipShader(Renderer r)
+        {
+            if (r == null) return false;
+            // MinimalGolfToon is the per-pixel path; for those we must not apply
+            // whole-object MPB alpha (bounds.center) which hides the entire mesh
+            // when its center enters the sphere instead of clipping per fragment.
+            var mats = r.sharedMaterials;
+            if (mats == null || mats.Length == 0) return false;
+            foreach (var m in mats)
+            {
+                if (m == null || m.shader == null) continue;
+                if (m.shader.name == "Minimal Golf/Toon") return true;
+                // Fallback: if keyword was successfully enabled, shader supports it
+                if (m.IsKeywordEnabled("_REVEAL_CLIP")) return true;
+            }
+            return false;
+        }
+
         private void ApplyMPB(List<ProximityRevealVolume> active)
         {
             // For each tagged renderer, compute min distance to any active volume
             foreach (var r in _taggedRenderers)
             {
                 if (r == null) continue;
+                // Per-pixel shader path (MinimalGolfToon + _REVEAL_CLIP) already does
+                // correct fragment clipping. Skip MPB for those renderers to avoid
+                // whole-object hiding based on bounds.center.
+                if (UsesRevealClipShader(r))
+                {
+                    // Ensure any previous MPB from before the fix is cleared
+                    if (_mpbByRenderer.ContainsKey(r))
+                    {
+                        r.SetPropertyBlock(null);
+                        _mpbByRenderer.Remove(r);
+                        _originalBaseColor.Remove(r);
+                    }
+                    if (r.shadowCastingMode == UnityEngine.Rendering.ShadowCastingMode.Off)
+                        r.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.On;
+                    continue;
+                }
                 // Use bounds center for large meshes; worldCenter is more stable for many small meshes
                 Vector3 pos = r.bounds.center;
                 // For skinned / zero bounds fallback to transform
@@ -367,6 +405,20 @@ namespace MinimalGolf
                 r.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.On;
                 SetRevealKeyword(r, false);
             }
+            // Also clear any leftover MPB blocks from renderers that may have
+            // been removed from _taggedRenderers but still have faded alpha
+            foreach (var kv in _mpbByRenderer)
+            {
+                if (kv.Key != null && !_taggedRenderers.Contains(kv.Key))
+                {
+                    kv.Key.SetPropertyBlock(null);
+                    kv.Key.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.On;
+                }
+            }
+            _taggedRenderers.Clear();
+            _mpbByRenderer.Clear();
+            _originalBaseColor.Clear();
+            _cachedTag = "";
         }
 
         private void CleanupRenderer(ProximityRevealVolume v)
