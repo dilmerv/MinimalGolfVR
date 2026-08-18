@@ -36,7 +36,7 @@ Shader "Minimal Golf/Toon"
             #pragma vertex OutlineVertex
             #pragma fragment OutlineFragment
             #pragma shader_feature_local _OUTLINE_ON
-            #pragma multi_compile_local _REVEAL_CLIP
+            #pragma shader_feature_local _REVEAL_CLIP
             #pragma multi_compile_fog
             #pragma multi_compile_instancing
 
@@ -121,7 +121,7 @@ Shader "Minimal Golf/Toon"
             #pragma multi_compile _ _MAIN_LIGHT_SHADOWS _MAIN_LIGHT_SHADOWS_CASCADE _MAIN_LIGHT_SHADOWS_SCREEN
             #pragma multi_compile_fragment _ _SHADOWS_SOFT
             #pragma multi_compile_fog
-            #pragma multi_compile_local _REVEAL_CLIP
+            #pragma shader_feature_local _REVEAL_CLIP
             #pragma multi_compile_instancing
 
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
@@ -237,7 +237,7 @@ Shader "Minimal Golf/Toon"
             #pragma target 3.0
             #pragma vertex ShadowVertex
             #pragma fragment ShadowFragment
-            #pragma multi_compile_local _REVEAL_CLIP
+            #pragma shader_feature_local _REVEAL_CLIP
             #pragma multi_compile_instancing
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Lighting.hlsl"
@@ -303,7 +303,7 @@ Shader "Minimal Golf/Toon"
             #pragma target 3.0
             #pragma vertex DepthVertex
             #pragma fragment DepthFragment
-            #pragma multi_compile_local _REVEAL_CLIP
+            #pragma shader_feature_local _REVEAL_CLIP
             #pragma multi_compile_instancing
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
             #include "../Shaders/RevealClip.hlsl"

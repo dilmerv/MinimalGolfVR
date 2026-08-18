@@ -37,6 +37,7 @@ namespace MinimalGolf
         private readonly Dictionary<Renderer, Color> _originalBaseColor = new Dictionary<Renderer, Color>();
         private readonly List<Renderer> _taggedRenderers = new List<Renderer>(128);
         private readonly HashSet<Renderer> _keywordEnabled = new HashSet<Renderer>();
+        private bool _leakCleared;
         private string _cachedTag = "";
         private float _scanTimer;
 
@@ -69,6 +70,7 @@ namespace MinimalGolf
         private void OnEnable()
         {
             _instance = this;
+            _leakCleared = false;
             RefreshTaggedCache(force: true);
         }
 
@@ -115,6 +117,38 @@ namespace MinimalGolf
 
             // Push shader globals (always, even if no tagged renderers, for shader path)
             PushGlobals(active);
+            // One-time leak cleanup: clear any renderer that has _REVEAL_CLIP ON but is not tagged
+            // (covers edit-mode leaked instances from prior patches)
+            if (active.Count > 0 && !_leakCleared && Application.isPlaying)
+            {
+                var allForLeak = FindObjectsByType<Renderer>(FindObjectsSortMode.None);
+                var currentForLeak = new HashSet<Renderer>(_taggedRenderers);
+                // If _taggedRenderers not yet built this frame, build it
+                if (currentForLeak.Count == 0 && _keywordEnabled.Count == 0)
+                {
+                    // Force refresh to populate _taggedRenderers
+                    RefreshTaggedCache(force: true);
+                    currentForLeak = new HashSet<Renderer>(_taggedRenderers);
+                }
+                foreach (var r in allForLeak)
+                {
+                    if (r == null) continue;
+                    if (r.GetComponent<ProximityRevealVolume>() != null) continue;
+                    if (currentForLeak.Contains(r)) continue;
+                    // Check instance keyword and clear
+                    bool hasKw = false;
+                    foreach (var m in r.sharedMaterials) if (m != null && m.IsKeywordEnabled("_REVEAL_CLIP")) { hasKw = true; break; }
+                    if (!hasKw)
+                    {
+                        try {
+                            var mats = r.materials;
+                            foreach (var m in mats) if (m != null && m.IsKeywordEnabled("_REVEAL_CLIP")) { hasKw = true; break; }
+                        } catch {}
+                    }
+                    if (hasKw) SetRevealKeyword(r, false);
+                }
+                _leakCleared = true;
+            }
 
             if (active.Count == 0)
             {
@@ -232,56 +266,22 @@ namespace MinimalGolf
                 if (matched)
                     _taggedRenderers.Add(r);
             }
-            // Exclusive gating: ensure ONLY tagged renderers have _REVEAL_CLIP.
+            // Exclusive gating: ONLY tagged renderers get _REVEAL_CLIP.
+            if (!Application.isPlaying)
+                return;
             var current = new HashSet<Renderer>(_taggedRenderers);
-            // Brute-force ensure correctness: scan all renderers and sync keyword to tag state.
-            // This guarantees leaked instances (pre-patch) are cleared.
+            // Brute-force: for every renderer, force keyword to match tag state.
+            // This clears any leaked instances from prior edit-mode r.materials calls.
             foreach (var r in allRenderers)
             {
                 if (r == null) continue;
                 if (r.GetComponent<ProximityRevealVolume>() != null) continue;
                 bool should = current.Contains(r);
-                // Check current keyword state without allocating new instance if possible:
-                // Use sharedMaterials as fast-path for never-instanced renderers.
-                bool isOn = _keywordEnabled.Contains(r);
-                // If we think it's off but it may have been enabled before tracking, check instance
-                if (!isOn && should)
-                {
-                    // Need to enable - check instance to confirm
-                    SetRevealKeyword(r, true);
-                    if (Application.isPlaying) _keywordEnabled.Add(r);
-                }
-                else if (isOn && !should)
-                {
-                    SetRevealKeyword(r, false);
-                    _keywordEnabled.Remove(r);
-                }
-                else if (!isOn && !should)
-                {
-                    // For untagged never-tracked, check instance keyword to clear leaked pre-patch instances.
-                    // We must check r.materials (creates instance) but only for leak cleanup.
-                    // Use sharedMaterials as fast reject, then instance.
-                    bool hasKw = false;
-                    foreach (var m in r.sharedMaterials) if (m != null && m.IsKeywordEnabled("_REVEAL_CLIP")) { hasKw = true; break; }
-                    if (!hasKw)
-                    {
-                        // Check instance (may create instance, but needed for correctness)
-                        var matsInst = r.materials;
-                        foreach (var m in matsInst) if (m != null && m.IsKeywordEnabled("_REVEAL_CLIP")) { hasKw = true; break; }
-                        // If we created instance and it was clean, no change needed - avoid writing back
-                        if (!hasKw) continue;
-                    }
-                    SetRevealKeyword(r, false);
-                }
-            }
-            // Also ensure any previously enabled that are no longer in allRenderers are removed
-            var toDisable2 = new List<Renderer>();
-            foreach (var r in _keywordEnabled)
-                if (!current.Contains(r)) toDisable2.Add(r);
-            foreach (var r in toDisable2)
-            {
-                if (r != null) SetRevealKeyword(r, false);
-                _keywordEnabled.Remove(r);
+                // Force sync - SetRevealKeyword internally checks kw vs should and only writes if changed,
+                // but we must call it for untagged to guarantee they are OFF even if never tracked.
+                SetRevealKeyword(r, should);
+                if (should) _keywordEnabled.Add(r);
+                else _keywordEnabled.Remove(r);
             }
             _keywordEnabled.RemoveWhere(r => r == null);
         }
