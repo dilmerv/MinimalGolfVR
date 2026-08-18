@@ -9655,8 +9655,8 @@ BoxCollider:
   m_ProvidesContacts: 0
   m_Enabled: 1
   serializedVersion: 3
-  m_Size: {x: 0.24, y: 0.9, z: 0.5}
-  m_Center: {x: 0, y: 0, z: 0}
+  m_Size: {x: 0.29, y: 0.9, z: 0.75}
+  m_Center: {x: 0.06, y: 0.05, z: 0}
 --- !u!1 &855573051
 GameObject:
   m_ObjectHideFlags: 0
@@ -11793,8 +11793,8 @@ BoxCollider:
   m_ProvidesContacts: 0
   m_Enabled: 1
   serializedVersion: 3
-  m_Size: {x: 0.24, y: 0.9, z: 0.5}
-  m_Center: {x: 0, y: 0, z: 0}
+  m_Size: {x: 0.29, y: 0.9, z: 0.75}
+  m_Center: {x: 0.06, y: 0.05, z: 0}
 --- !u!1 &983136865
 GameObject:
   m_ObjectHideFlags: 0
@@ -17014,7 +17014,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: e39da5e816f984a90841143adeda2847, type: 3}
   m_Name: 
   m_EditorClassIdentifier: MinimalGolf::MinimalGolf.ProximityRevealVolume
-  revealRadius: 0.1
+  revealRadius: 0.05
   edgeSoftness: 0.02
   targetTag: RevealOccluder
   invertInside: 0
@@ -18897,7 +18897,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: e39da5e816f984a90841143adeda2847, type: 3}
   m_Name: 
   m_EditorClassIdentifier: MinimalGolf::MinimalGolf.ProximityRevealVolume
-  revealRadius: 0.1
+  revealRadius: 0.05
   edgeSoftness: 0.02
   targetTag: RevealOccluder
   invertInside: 0

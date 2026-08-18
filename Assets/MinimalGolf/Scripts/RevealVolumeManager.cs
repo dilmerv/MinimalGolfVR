@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Linq;
 using UnityEngine;
 
 namespace MinimalGolf
@@ -35,6 +36,7 @@ namespace MinimalGolf
         private readonly Dictionary<Renderer, MaterialPropertyBlock> _mpbByRenderer = new Dictionary<Renderer, MaterialPropertyBlock>();
         private readonly Dictionary<Renderer, Color> _originalBaseColor = new Dictionary<Renderer, Color>();
         private readonly List<Renderer> _taggedRenderers = new List<Renderer>(128);
+        private readonly HashSet<Renderer> _keywordEnabled = new HashSet<Renderer>();
         private string _cachedTag = "";
         private float _scanTimer;
 
@@ -78,8 +80,11 @@ namespace MinimalGolf
                 if (kv.Key != null)
                     kv.Key.SetPropertyBlock(null);
             }
+            foreach (var r in _keywordEnabled)
+                if (r != null) SetRevealKeyword(r, false);
             foreach (var r in _taggedRenderers)
-                SetRevealKeyword(r, false);
+                if (r != null && !_keywordEnabled.Contains(r)) SetRevealKeyword(r, false);
+            _keywordEnabled.Clear();
             _mpbByRenderer.Clear();
             _originalBaseColor.Clear();
             Shader.SetGlobalInt(ID_RevealEnabled, 0);
@@ -123,10 +128,13 @@ namespace MinimalGolf
                 return;
             }
 
-            // Tag cache refresh (tag may differ per volume; union of tags)
-            // For simplicity, we use the first volume's tag as primary, but also handle mixed tags by scanning all.
-            string primaryTag = active[0].targetTag;
-            bool tagChanged = primaryTag != _cachedTag;
+            // Tag cache refresh - use joined sorted tags for change detection
+            var tagsForUpdate = new HashSet<string>();
+            foreach (var v in active) if (!string.IsNullOrEmpty(v.targetTag)) tagsForUpdate.Add(v.targetTag);
+            var sortedUpd = new List<string>(tagsForUpdate);
+            sortedUpd.Sort();
+            string joinedUpd = string.Join(",", sortedUpd);
+            bool tagChanged = joinedUpd != _cachedTag;
             _scanTimer += Time.deltaTime;
             if (tagChanged || _scanTimer > 0.5f || _taggedRenderers.Count == 0)
             {
@@ -194,14 +202,13 @@ namespace MinimalGolf
                 _taggedRenderers.Clear(); _cachedTag = ""; return;
             }
 
-            // Primary tag for change detection
-            string first = "";
-            foreach (var t in tags) { first = t; break; }
-            if (!force && first == _cachedTag && _taggedRenderers.Count > 0) return;
-            _cachedTag = first;
+            // Use sorted joined tags for change detection (supports multi-tag union)
+            var sorted = new List<string>(tags);
+            sorted.Sort();
+            string joined = string.Join(",", sorted);
+            if (!force && joined == _cachedTag && _taggedRenderers.Count > 0) return;
+            _cachedTag = joined;
 
-            // Keep previous set to diff keywords
-            var previous = new HashSet<Renderer>(_taggedRenderers);
             // Rebuild list: find all renderers whose GameObject has any of the tags (including children with tag on parent)
             _taggedRenderers.Clear();
             var allRenderers = FindObjectsByType<Renderer>(FindObjectsSortMode.None);
@@ -225,12 +232,58 @@ namespace MinimalGolf
                 if (matched)
                     _taggedRenderers.Add(r);
             }
-            // Enable keyword on new tagged, disable on removed
+            // Exclusive gating: ensure ONLY tagged renderers have _REVEAL_CLIP.
             var current = new HashSet<Renderer>(_taggedRenderers);
-            foreach (var r in current)
-                if (!previous.Contains(r)) SetRevealKeyword(r, true);
-            foreach (var r in previous)
-                if (!current.Contains(r)) SetRevealKeyword(r, false);
+            // Brute-force ensure correctness: scan all renderers and sync keyword to tag state.
+            // This guarantees leaked instances (pre-patch) are cleared.
+            foreach (var r in allRenderers)
+            {
+                if (r == null) continue;
+                if (r.GetComponent<ProximityRevealVolume>() != null) continue;
+                bool should = current.Contains(r);
+                // Check current keyword state without allocating new instance if possible:
+                // Use sharedMaterials as fast-path for never-instanced renderers.
+                bool isOn = _keywordEnabled.Contains(r);
+                // If we think it's off but it may have been enabled before tracking, check instance
+                if (!isOn && should)
+                {
+                    // Need to enable - check instance to confirm
+                    SetRevealKeyword(r, true);
+                    if (Application.isPlaying) _keywordEnabled.Add(r);
+                }
+                else if (isOn && !should)
+                {
+                    SetRevealKeyword(r, false);
+                    _keywordEnabled.Remove(r);
+                }
+                else if (!isOn && !should)
+                {
+                    // For untagged never-tracked, check instance keyword to clear leaked pre-patch instances.
+                    // We must check r.materials (creates instance) but only for leak cleanup.
+                    // Use sharedMaterials as fast reject, then instance.
+                    bool hasKw = false;
+                    foreach (var m in r.sharedMaterials) if (m != null && m.IsKeywordEnabled("_REVEAL_CLIP")) { hasKw = true; break; }
+                    if (!hasKw)
+                    {
+                        // Check instance (may create instance, but needed for correctness)
+                        var matsInst = r.materials;
+                        foreach (var m in matsInst) if (m != null && m.IsKeywordEnabled("_REVEAL_CLIP")) { hasKw = true; break; }
+                        // If we created instance and it was clean, no change needed - avoid writing back
+                        if (!hasKw) continue;
+                    }
+                    SetRevealKeyword(r, false);
+                }
+            }
+            // Also ensure any previously enabled that are no longer in allRenderers are removed
+            var toDisable2 = new List<Renderer>();
+            foreach (var r in _keywordEnabled)
+                if (!current.Contains(r)) toDisable2.Add(r);
+            foreach (var r in toDisable2)
+            {
+                if (r != null) SetRevealKeyword(r, false);
+                _keywordEnabled.Remove(r);
+            }
+            _keywordEnabled.RemoveWhere(r => r == null);
         }
 
         private static void SetRevealKeyword(Renderer r, bool enable)
@@ -403,19 +456,26 @@ namespace MinimalGolf
                 if (r == null) continue;
                 r.SetPropertyBlock(null);
                 r.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.On;
+            }
+            foreach (var r in _keywordEnabled)
+            {
+                if (r == null) continue;
+                r.SetPropertyBlock(null);
+                r.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.On;
                 SetRevealKeyword(r, false);
             }
             // Also clear any leftover MPB blocks from renderers that may have
             // been removed from _taggedRenderers but still have faded alpha
             foreach (var kv in _mpbByRenderer)
             {
-                if (kv.Key != null && !_taggedRenderers.Contains(kv.Key))
+                if (kv.Key != null && !_taggedRenderers.Contains(kv.Key) && !_keywordEnabled.Contains(kv.Key))
                 {
                     kv.Key.SetPropertyBlock(null);
                     kv.Key.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.On;
                 }
             }
             _taggedRenderers.Clear();
+            _keywordEnabled.Clear();
             _mpbByRenderer.Clear();
             _originalBaseColor.Clear();
             _cachedTag = "";
