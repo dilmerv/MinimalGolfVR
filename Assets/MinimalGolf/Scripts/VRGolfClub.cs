@@ -44,12 +44,14 @@ namespace MinimalGolf
             if (game == null) game = FindFirstObjectByType<MinimalGolfGame>();
             EnsureSphereVisual();
             UpdateSphereVisual();
+            EnsureRevealVolume();
         }
 
         private void OnEnable()
         {
             EnsureSphereVisual();
             UpdateSphereVisual();
+            EnsureRevealVolume();
         }
 
         private void OnValidate()
@@ -66,6 +68,7 @@ namespace MinimalGolf
             }
             EnsureSphereVisual();
             UpdateSphereVisual();
+            EnsureRevealVolume();
         }
 
         private void EnsureSphereVisual()
@@ -365,6 +368,25 @@ namespace MinimalGolf
         private void OnTriggerExit(Collider other)
         {
             if (other.attachedRigidbody == ballRigidbody) overlappingBall = false;
+        }
+
+        private void EnsureRevealVolume()
+        {
+            // Ensure an invisible ProximityRevealVolume exists under ProximitySphere
+            Transform sphere = transform.Find("ProximitySphere");
+            if (sphere == null) return;
+            var existing = sphere.GetComponentInChildren<ProximityRevealVolume>(true);
+            if (existing != null) return;
+            // Also check if manager already has volume for this controller (avoid dup)
+            var go = new GameObject("RevealVolume");
+            go.transform.SetParent(sphere, false);
+            go.transform.localPosition = Vector3.zero;
+            go.transform.localRotation = Quaternion.identity;
+            go.transform.localScale = Vector3.one;
+            var vol = go.AddComponent<ProximityRevealVolume>();
+#if UNITY_EDITOR
+            if (!Application.isPlaying) UnityEditor.Undo.RegisterCreatedObjectUndo(go, "Create RevealVolume");
+#endif
         }
 
         private void OnDrawGizmos()

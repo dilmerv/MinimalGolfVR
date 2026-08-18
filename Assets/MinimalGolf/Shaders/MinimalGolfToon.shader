@@ -15,6 +15,7 @@ Shader "Minimal Golf/Toon"
         _OutlineColor("Outline Color", Color) = (0.055,0.16,0.15,1)
         _OutlineWidth("Outline Width", Range(0,0.04)) = 0.018
         [Toggle] _UseVertexColor("Use Vertex Color", Float) = 0
+        [Enum(UnityEngine.Rendering.CullMode)] _CullMode("Cull Mode", Float) = 2
     }
 
     SubShader
@@ -35,10 +36,12 @@ Shader "Minimal Golf/Toon"
             #pragma vertex OutlineVertex
             #pragma fragment OutlineFragment
             #pragma shader_feature_local _OUTLINE_ON
+            #pragma shader_feature_local _REVEAL_CLIP
             #pragma multi_compile_fog
             #pragma multi_compile_instancing
 
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
+            #include "../Shaders/RevealClip.hlsl"
 
             struct Attributes
             {
@@ -50,6 +53,7 @@ Shader "Minimal Golf/Toon"
             struct Varyings
             {
                 float4 positionCS : SV_POSITION;
+                float3 positionWS : TEXCOORD1;
                 half fogFactor : TEXCOORD0;
                 UNITY_VERTEX_INPUT_INSTANCE_ID
                 UNITY_VERTEX_OUTPUT_STEREO
@@ -69,6 +73,7 @@ Shader "Minimal Golf/Toon"
                 half4 _OutlineColor;
                 half _OutlineWidth;
                 half _UseVertexColor;
+                float _CullMode;
             CBUFFER_END
 
             Varyings OutlineVertex(Attributes input)
@@ -81,6 +86,7 @@ Shader "Minimal Golf/Toon"
                 float3 positionWS = TransformObjectToWorld(input.positionOS.xyz);
                 float3 normalWS = TransformObjectToWorldNormal(input.normalOS);
                 positionWS += normalize(normalWS) * _OutlineWidth;
+                output.positionWS = positionWS;
                 output.positionCS = TransformWorldToHClip(positionWS);
                 output.fogFactor = ComputeFogFactor(output.positionCS.z);
                 return output;
@@ -89,6 +95,9 @@ Shader "Minimal Golf/Toon"
             half4 OutlineFragment(Varyings input) : SV_Target
             {
                 UNITY_SETUP_INSTANCE_ID(input);
+#ifdef _REVEAL_CLIP
+                clip(RevealMask(input.positionWS) - 0.01);
+#endif
                 #if !defined(_OUTLINE_ON)
                     clip(-1);
                 #endif
@@ -101,6 +110,9 @@ Shader "Minimal Golf/Toon"
         {
             Name "ForwardLit"
             Tags { "LightMode"="UniversalForward" }
+            Blend SrcAlpha OneMinusSrcAlpha
+            ZWrite On
+            Cull [_CullMode]
 
             HLSLPROGRAM
             #pragma target 3.0
@@ -109,10 +121,12 @@ Shader "Minimal Golf/Toon"
             #pragma multi_compile _ _MAIN_LIGHT_SHADOWS _MAIN_LIGHT_SHADOWS_CASCADE _MAIN_LIGHT_SHADOWS_SCREEN
             #pragma multi_compile_fragment _ _SHADOWS_SOFT
             #pragma multi_compile_fog
+            #pragma shader_feature_local _REVEAL_CLIP
             #pragma multi_compile_instancing
 
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Lighting.hlsl"
+            #include "../Shaders/RevealClip.hlsl"
 
             struct Attributes
             {
@@ -153,6 +167,7 @@ Shader "Minimal Golf/Toon"
                 half4 _OutlineColor;
                 half _OutlineWidth;
                 half _UseVertexColor;
+                float _CullMode;
             CBUFFER_END
 
             Varyings ToonVertex(Attributes input)
@@ -197,7 +212,14 @@ Shader "Minimal Golf/Toon"
                 half rim = pow(saturate(1.0h - dot(normalWS, viewDirection)), _RimPower) * _RimStrength;
                 color += _RimColor.rgb * rim;
                 color = MixFog(color, input.fogFactor);
+#ifdef _REVEAL_CLIP
+                half reveal = RevealMask(input.positionWS);
+                half alpha = base.a * reveal;
+                clip(alpha - 0.01);
+                return half4(color, alpha);
+#else
                 return half4(color, base.a);
+#endif
             }
             ENDHLSL
         }
@@ -206,6 +228,7 @@ Shader "Minimal Golf/Toon"
         {
             Name "ShadowCaster"
             Tags { "LightMode"="ShadowCaster" }
+            Cull [_CullMode]
             ZWrite On
             ZTest LEqual
             ColorMask 0
@@ -214,9 +237,11 @@ Shader "Minimal Golf/Toon"
             #pragma target 3.0
             #pragma vertex ShadowVertex
             #pragma fragment ShadowFragment
+            #pragma shader_feature_local _REVEAL_CLIP
             #pragma multi_compile_instancing
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Lighting.hlsl"
+            #include "../Shaders/RevealClip.hlsl"
 
             float3 _LightDirection;
             float3 _LightPosition;
@@ -231,6 +256,7 @@ Shader "Minimal Golf/Toon"
             struct Varyings
             {
                 float4 positionCS : SV_POSITION;
+                float3 positionWS : TEXCOORD0;
                 UNITY_VERTEX_INPUT_INSTANCE_ID
             };
 
@@ -246,6 +272,7 @@ Shader "Minimal Golf/Toon"
                 #else
                     float3 lightDirectionWS = _LightDirection;
                 #endif
+                output.positionWS = positionWS;
                 positionWS = ApplyShadowBias(positionWS, normalWS, lightDirectionWS);
                 output.positionCS = TransformWorldToHClip(positionWS);
                 #if UNITY_REVERSED_Z
@@ -256,7 +283,11 @@ Shader "Minimal Golf/Toon"
                 return output;
             }
 
+#ifdef _REVEAL_CLIP
+            half4 ShadowFragment(Varyings input) : SV_Target { clip(RevealMask(input.positionWS) - 0.01); return 0; }
+#else
             half4 ShadowFragment(Varyings input) : SV_Target { return 0; }
+#endif
             ENDHLSL
         }
 
@@ -264,6 +295,7 @@ Shader "Minimal Golf/Toon"
         {
             Name "DepthOnly"
             Tags { "LightMode"="DepthOnly" }
+            Cull [_CullMode]
             ZWrite On
             ColorMask R
 
@@ -271,8 +303,10 @@ Shader "Minimal Golf/Toon"
             #pragma target 3.0
             #pragma vertex DepthVertex
             #pragma fragment DepthFragment
+            #pragma shader_feature_local _REVEAL_CLIP
             #pragma multi_compile_instancing
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
+            #include "../Shaders/RevealClip.hlsl"
 
             struct Attributes
             {
@@ -283,6 +317,7 @@ Shader "Minimal Golf/Toon"
             struct Varyings
             {
                 float4 positionCS : SV_POSITION;
+                float3 positionWS : TEXCOORD0;
                 UNITY_VERTEX_INPUT_INSTANCE_ID
             };
 
@@ -291,11 +326,16 @@ Shader "Minimal Golf/Toon"
                 Varyings output;
                 UNITY_SETUP_INSTANCE_ID(input);
                 UNITY_TRANSFER_INSTANCE_ID(input, output);
+                output.positionWS = TransformObjectToWorld(input.positionOS.xyz);
                 output.positionCS = TransformObjectToHClip(input.positionOS.xyz);
                 return output;
             }
 
+#ifdef _REVEAL_CLIP
+            half4 DepthFragment(Varyings input) : SV_Target { clip(RevealMask(input.positionWS) - 0.01); return 0; }
+#else
             half4 DepthFragment(Varyings input) : SV_Target { return 0; }
+#endif
             ENDHLSL
         }
     }
