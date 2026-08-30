@@ -6,7 +6,7 @@ EditorBuildSettings:
   serializedVersion: 2
   m_Scenes:
   - enabled: 1
-    path: Assets/Scenes/MinimalGolf.unity
+    path: Assets/MinimalGolf/Scenes/MinimalGolf.unity
     guid: 42eb6f63d69274ace91709b16121f701
   m_configObjects:
     Unity.XR.Oculus.Settings: {fileID: 11400000, guid: 0d845edb4aac7449ab84c5aec26dc2aa, type: 2}
