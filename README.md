@@ -20,5 +20,5 @@ It’s very simple: clone it, open it in Unity, activate the Meta XR Simulator, 
 |<img src="https://github.com/dilmerv/MinimalGolfVR/blob/master/Docs/Images/Demo_1.gif" width="560">|
 |Running Game w/ the Meta XR Simulator|
 |<img src="https://github.com/dilmerv/MinimalGolfVR/blob/master/Docs/Images/Demo_2.gif" width="560">|
-|Running Unity CLI CMD Eval Commands|
+|Playing w/ Unity CLI Eval Commands|
 |<img src="https://github.com/dilmerv/MinimalGolfVR/blob/master/Docs/Images/Demo_3.gif" width="560">|
