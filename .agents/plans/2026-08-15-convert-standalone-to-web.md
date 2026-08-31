@@ -1,0 +1,29 @@
+# Prompt: Port MinimalisticGolf to Three.js Web (`Web/`)
+
+**Task:** Port the Unity project `MinimalisticGolf` (under `Assets/`) to a Three.js web game running entirely from a single file `Web/index.html` plus `Web/assets/music` + `Web/assets/sfx`. Do not include test harnesses. Preserve the exact Unity feel.
+
+**Source of truth:** `Assets/MinimalGolf/Scripts/` (`MinimalGolfGame.cs`, `MiniGolfLevel.cs`, `CameraImpactShake.cs`, `LevelRevealAnimator.cs`, `WindmillRotor.cs`, `AudioManager.cs`) and `Assets/MinimalGolf/Editor/MinimalGolfSceneBuilder.cs` (8 authored levels, materials `Course Green 0x62B875`, `Dark Green Rails 0x275B45`, `Warm Cream 0xF0D9A6`, `Dark Cup 0x172A38`, `Gold 0xF1C86C`, `Ball Blue 0x4DA9E8`, `Obstacle Accent 0xD97A28`, `Aiming Line` toon shader, `Playful Ball Physics` `dynamic 0.38 static 0.44 bounciness 0.34`, fog `15→34` on `0x779EBE`, ambient `0.72`).
+
+**Stack:** Single-file `Web/index.html` with `es-module-shims` + `three@0.160` importmap, `Web/assets/music/*.mp3` (3 tracks copied from `Assets/Audio/Music/`) and `Web/assets/sfx/*.wav` (7 files from `Assets/Audio/SFX/`). No build step.
+
+**Levels (exact):** Replicate 8 `Create*` methods: `THE WARM UP (par2 w4.4 l10.5 cam6.15 ball [0,-4.05] hole [0,4.15] gate 3.35)`, `THE GARDEN (3/6.2/14.5/7.25)`, `WINDMILL WAY (4/7/20/9.25)`, `BUMPER BEND (4/7.4/18/8.35)`, `GRAND TOUR (5/8.5/21.5/9.7)`, `HILLSIDE TURN (4/11.5/15/8.8 L-shape with two greens 5×15 at -3.25,0 and 6.5×5 at 2.5,5)`, `EASY ASCENT (4/7.5/13.3/7.6)`, `SUMMIT RUN (6/8.5/13.3/7.6)`. Use helpers `addGate/addGates/addBox/addIslet(2.25)/addDiamond/addTriangle/addHill/addRamp/addWindmill`. Obstacle `scale*0.28`, windmill rotor `72°/s`.
+
+**Camera:** Unity `Camera at (5.1,5.65,-6.9) rot (29.9,321,0) orthographicSize 6.15→9.7`. Use `OrthographicCamera` sized `def.cam*1.05` with `ORTHO_OFFSET (5.1,9.0,-7.8)` and `updateOrthoCamera()` to keep whole course in view. `onResize` updates `left/right = ±size*aspect`.
+
+**Green / hole (no visual block):** `GREEN_TOP 0.10`. Green must have real hole: `Shape(w,l)` + `Path.absarc(hole,0.32)` → `ExtrudeGeometry depth 0.2` rotated `X 90°` at `y 0.10` (not solid `Box`). Hole: dark `Cylinder 0.32×0.012` at `GREEN_TOP+0.008` + inner `Cylinder 0.30×0.18` at `GREEN_TOP-0.07`. No gold torus/ring — hole flush. Flag at hole `+0.12,0.45` pole + `+0.28,0.68` plane (Kenney `flag-blue` offset `0.12,0.025,0.01`). Ball `Sphere r0.16` at `y 0.26` (bottom `0.10` on green), `BALL_PLANE_Y 0.26`, `localNext.y 0.26`, material `depthTest:true` so it goes *behind* gate pillars when behind tunnel (green hole prevents green occluding sink). Gate pillars `Box 0.22×1.55` at `y 0.77` top at `1.55` (opening `≈0.43` after scale) so ball `y 0.26` tunnels through, not over.
+
+**Physics (local, converted from world aim):**
+- `playableSpeed 0.85`, `STOP 0.18` guarded `!nearHoleForStop` (`dist≤assistRadius`), `maximumImpulse 13.5`, `maximumDragDistance 2.2` (`shot = lerp(1.1,13.5, dist/2.2)`), `friction 0.976` (`*pow(friction,dt*60)`), `assistRadius 0.65`, `captureRadius 0.28`, `veryClose 0.26` (Unity `isTrigger`: `dist<0.26` or `dist≤0.28 && horiz≤3.5` → `startCapture()`), `min/maxPull 1.2/3.0`, `damp lerp(0.995,0.88,closeness)`, `maxAssistedSpeed 6.0`, `maxCaptureSpeed 3.5`. Early return only if `horiz<0.001 && !nearHoleEarly`.
+- Drag: `raycaster` to plane `y 0.26` → `pull = dragStart - cur`, `pull.y=0`, `shotPower=clamp(dist/2.2)`, `aimDir=normalize(pull)`, line `world: ballWorld(0.18) → ballWorld+aimDir*lerp(0.35,3.2,shotPower)` (`Line depthTest:false renderOrder:999` + `Cone` arrow `atan2(x,z)`).
+- Shot: `worldImp = aimDir*lerp(1.1,13.5,shotPower)` → `ballVel.copy(worldImp).applyMatrix4(makeRotationY(-ry))` where `ry=currentGroup.rotation.y` so world delta `R(ry)*R(-ry)*worldImp = worldImp` follows arrow after `←/→` `±π/4` rotate. Wall colliders local `AABB/circle` check in `physicsUpdate` (localNext/localVel).
+- `resetBall()` clears `revealing` and restores `revealParts.authoredPos`, zeroes `ballVel`.
+
+**Reveal / shake:** `LevelRevealAnimator` stagger `0.08+0.55+0.055` per mesh, offset `6` in 4 dirs, capped `3.0s`; `CameraImpactShake` relative to `baseCamPos/baseCamTarget` (`0.02` on wall hit).
+
+**Audio (mirrors Unity `AudioManager`):** `musicTracks[]` 3 mp3 `volume 0.32`, `shotClips[3]`, `holeClips[3]`, `wooshClip`, `chooseNextIdx` non-repeat, `bgm = new Audio()` `loop false` `onended→playRandomTrack()`, `unlockAudio()` resumes `AudioContext` on `pointerdown`/`keydown` and tries `playRandomTrack()` on `window load`/`DOMContentLoaded`/immediate (catches `NotAllowedError`). `playShotSfx()`/`playHoleSfx()`/`playWooshSfx()`/`playCollisionSfx()` at `0.70/0.60/0.25` with `beep` fallback. `M` toggles `bgmMuted/sfxMuted`.
+
+**UI (responsive):** `#hudTop fixed top:14 left:12 right:12 flex space-between` (`backdrop-filter`, `0.92`); `#identity 320×80` (`bar 5`, title `20px`, eyebrow `10px`), `#progress 210×80` (`label 9px`, dots `6px/9px`), `#stats 200×80` (`val 30px`). `#power fixed left:50% bottom:98px`, `#feedback fixed left:50% top:50% translate(-50%,-50%)`, `#legend fixed left:50% bottom:18px` bottom-center. `900px/600px` wrap.
+
+**Start menu / flow:** `#startMenu fixed inset:0 z-index:20 blur 8px` with `.panel 420px` `MINIMAL GOLF` + `Play` (`--orange`) + `Credits`; `Credits` hides `#menuMain` shows `#creditsPanel` containing `Created By Meta Muse Code (muse-spark-1.2-contributor)<br>Dilmer Valecillos` and `Back`. `Play` → `unlockAudio()` + `hidden` + `bgm.play()`/`audioCtx.resume()`; `buildLevel(0)` pre-built behind menu. `Escape` shows menu, hides credits, `bgm.pause()` + `audioCtx.suspend()`, cancels drag. `courseComplete` overlay `ENTER/SPACE → restartCourse()`.
+
+**Verify:** `python3 -m http.server --directory Web 8000`, hard refresh, drag to putt, `←/→` rotate, `R` reset, `M` mute, `Escape` menu, sink ball center `dist<0.26` → `center 0.10s (0.88×)` → `sink 0.52s (0.08×)` → `levelComplete` → next level.
