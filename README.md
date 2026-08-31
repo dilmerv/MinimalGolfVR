@@ -22,5 +22,8 @@ It’s very simple: clone it, open it in Unity, activate the Meta XR Simulator, 
 |Playing w/ Unity CLI Eval Commands|
 |<img src="https://github.com/dilmerv/MinimalGolfVR/blob/master/Docs/Images/Demo_3.gif" width="560">|
 
+## Plans/Prompts 
+For a list of all the prompts used to create this repo, see [https://github.com/dilmerv/MinimalGolfVR/tree/master/.agents/plans](https://github.com/dilmerv/MinimalGolfVR/tree/master/.agents/plans).
+
 ## Credits
 Huge thanks to Kenney for creating the beautiful Minigolf Kit featured in this video. Support Kenney by checking out more assets at https://kenney.nl.
