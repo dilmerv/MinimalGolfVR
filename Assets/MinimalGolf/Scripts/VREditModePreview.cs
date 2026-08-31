@@ -1,6 +1,8 @@
 using UnityEngine;
+using UnityEngine.SceneManagement;
 #if UNITY_EDITOR
 using UnityEditor;
+using UnityEditor.SceneManagement;
 #endif
 
 namespace MinimalGolf
@@ -26,6 +28,8 @@ namespace MinimalGolf
         private Vector3 previewRightPos = new Vector3(0.20f, 1.25f, 0.3f);
         [SerializeField]
         private Quaternion previewRightRot = Quaternion.Euler(0f, -30f, 0f);
+        [SerializeField, Tooltip("When enabled, the preview auto-applies in edit mode (including after editor restart and play sessions) and re-applies itself if the rig overwrites it. The Restore button pauses auto-apply until Reapply, replay, or re-checking this. When disabled, the preview is only applied manually via Reapply Preview.")]
+        private bool persistentPreview = true;
 
         private Transform centerEye;
         private Transform leftAnchor;
@@ -42,14 +46,34 @@ namespace MinimalGolf
         private GameObject leftControllerRoot;
         private GameObject rightControllerRoot;
         private bool isPreviewActive;
+        // Set when the user explicitly clicks Restore in edit mode: honor it and don't
+        // let persistent auto-apply undo it until Reapply, a play cycle, or re-checking Persistent.
+        private bool suppressAutoPreview;
 
 #if UNITY_EDITOR
+        private void OnValidate()
+        {
+            if (Application.isPlaying) return;
+            if (!isActiveAndEnabled) return;
+            // Toggling Persistent back on (or editing values with it on) re-enforces the preview.
+            if (persistentPreview && !isPreviewActive)
+            {
+                suppressAutoPreview = false;
+                TryApplyPreview();
+            }
+        }
+
         private void OnEnable()
         {
             EditorApplication.playModeStateChanged += OnPlayModeChanged;
-            CacheReferences();
-            if (!Application.isPlaying)
-                ApplyPreview();
+            EditorSceneManager.sceneOpened += OnSceneOpened;
+            if (Application.isPlaying)
+            {
+                isPreviewActive = false;
+                return;
+            }
+            if (persistentPreview && !suppressAutoPreview)
+                TryApplyPreview();
             else
                 isPreviewActive = false;
         }
@@ -57,6 +81,16 @@ namespace MinimalGolf
         private void OnDisable()
         {
             EditorApplication.playModeStateChanged -= OnPlayModeChanged;
+            EditorSceneManager.sceneOpened -= OnSceneOpened;
+        }
+
+        // Fires after the scene finishes loading — the deterministic hook for editor
+        // restarts, where OnEnable can run before scene-wide lookup resolves.
+        private void OnSceneOpened(Scene scene, OpenSceneMode mode)
+        {
+            if (Application.isPlaying) return;
+            if (!persistentPreview || suppressAutoPreview) return;
+            TryApplyPreview();
         }
 
         private void OnPlayModeChanged(PlayModeStateChange state)
@@ -64,20 +98,46 @@ namespace MinimalGolf
             if (state == PlayModeStateChange.ExitingEditMode)
                 RestoreForPlay();
             else if (state == PlayModeStateChange.EnteredEditMode)
-                ApplyPreview();
+            {
+                if (persistentPreview)
+                {
+                    suppressAutoPreview = false;
+                    TryApplyPreview();
+                }
+            }
         }
+
+        private double nextRetryTime;
 
         private void Update()
         {
             if (Application.isPlaying) return;
-            if (!isPreviewActive) return;
-            if (centerEye != null && (centerEye.localPosition - previewCenterPos).sqrMagnitude > 0.001f)
-                ApplyPreview();
+            if (!persistentPreview || suppressAutoPreview) return;
+            if (!isPreviewActive || centerEye == null)
+            {
+                // Not applied yet — e.g. OnEnable ran before the rig was resolvable
+                // during editor/scene load. Keep retrying (throttled) until it sticks.
+                if (EditorApplication.timeSinceStartup >= nextRetryTime)
+                {
+                    nextRetryTime = EditorApplication.timeSinceStartup + 0.5;
+                    TryApplyPreview();
+                }
+                return;
+            }
+            if ((centerEye.localPosition - previewCenterPos).sqrMagnitude > 0.001f)
+                TryApplyPreview();
         }
 
-        private void CacheReferences()
+        // Returns true once the rig and its key anchors are resolved.
+        private bool CacheReferences()
         {
-            var rig = FindFirstObjectByType<OVRCameraRig>(FindObjectsInactive.Include);
+            // Prefer the rig on this GameObject: valid even during scene load, when a
+            // scene-wide lookup may not see everything yet. Fall back to scene search.
+            var rig = GetComponent<OVRCameraRig>();
+            if (rig == null)
+                rig = GetComponentInParent<OVRCameraRig>();
+            if (rig == null)
+                rig = FindFirstObjectByType<OVRCameraRig>(FindObjectsInactive.Include);
             if (rig != null)
             {
                 centerEye = rig.centerEyeAnchor;
@@ -101,13 +161,23 @@ namespace MinimalGolf
                 var helper = rightAnchor.GetComponentInChildren<OVRControllerHelper>(true);
                 if (helper != null) rightControllerRoot = helper.gameObject;
             }
+            return centerEye != null;
         }
 
         [ContextMenu("Reapply Preview — ApplyPreview")]
-        public void ApplyPreview()
+        public void ApplyPreview() => TryApplyPreview();
+
+        // Applies the preview; returns false when the rig/anchors aren't resolvable yet
+        // (e.g. very early in scene load) so callers can retry instead of giving up.
+        private bool TryApplyPreview()
         {
+            suppressAutoPreview = false;
+            if (!CacheReferences())
+            {
+                isPreviewActive = false;
+                return false;
+            }
             isPreviewActive = true;
-            CacheReferences();
             if (centerEye != null)
             {
                 Transform ts = centerEye.parent;
@@ -128,14 +198,24 @@ namespace MinimalGolf
                 rightAnchor.localRotation = previewRightRot;
             }
             ApplyControllerModelsPreview(true);
+            return true;
         }
 
-        // Inspector button wrapper — also used by CustomEditor button
+        // Inspector button wrapper — also used by CustomEditor button.
+        // Marks the restore as an explicit user choice so persistent auto-apply
+        // doesn't immediately undo it; cleared on Reapply, replay, or re-check.
+        public void RestoreForPlayManual()
+        {
+            RestoreForPlay();
+            if (!Application.isPlaying)
+                suppressAutoPreview = true;
+        }
+
         [ContextMenu("Restore For Play — RestoreForPlay")]
-        public void RestoreForPlayInspector() => RestoreForPlay();
+        public void RestoreForPlayInspector() => RestoreForPlayManual();
 
         [ContextMenu("Restore For Play")]
-        public void RestoreForPlayPublic() => RestoreForPlay();
+        public void RestoreForPlayPublic() => RestoreForPlayManual();
 
         private void RestoreForPlay()
         {
@@ -232,7 +312,7 @@ namespace MinimalGolf
             var t = target as VRPreviewMode;
             if (t == null) return;
             EditorGUILayout.Space(8);
-            EditorGUILayout.HelpBox("Preview positions are edit-mode only. Use buttons to force reapply/restore. Execution order is -10000 so this runs before OVRCameraRig.", MessageType.Info);
+            EditorGUILayout.HelpBox("Preview positions are edit-mode only. Persistent (checked) auto-applies on load/restart, after play, and re-enforces the preview; Restore pauses it until Reapply, replay, or re-check. Unchecked means manual-only via the buttons. Execution order is -10000 so this runs before OVRCameraRig.", MessageType.Info);
             using (new EditorGUILayout.HorizontalScope())
             {
                 if (GUILayout.Button("Reapply Preview (ApplyPreview)"))
@@ -243,9 +323,9 @@ namespace MinimalGolf
                 }
                 if (GUILayout.Button("Restore For Play"))
                 {
-                    // Calls the same logic that ExitingEditMode uses — unconditional revert to vr* poses
-                    var mi = typeof(VRPreviewMode).GetMethod("RestoreForPlay", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-                    mi?.Invoke(t, null);
+                    // Same revert ExitingEditMode uses, plus pause persistent auto-apply
+                    // until Reapply, replay, or re-checking Persistent.
+                    t.RestoreForPlayManual();
                     EditorUtility.SetDirty(t);
                     UnityEditor.SceneManagement.EditorSceneManager.MarkSceneDirty(t.gameObject.scene);
                 }

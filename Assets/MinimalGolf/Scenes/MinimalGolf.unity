@@ -5946,6 +5946,7 @@ MonoBehaviour:
   previewLeftRot: {x: 0, y: 0.25881904, z: 0, w: 0.9659258}
   previewRightPos: {x: 0.2, y: 1.25, z: 0.3}
   previewRightRot: {x: 0, y: -0.25881904, z: 0, w: 0.9659258}
+  persistentPreview: 1
 --- !u!1 &347823330
 GameObject:
   m_ObjectHideFlags: 0
