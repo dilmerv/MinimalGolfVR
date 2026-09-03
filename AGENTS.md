@@ -24,7 +24,7 @@
 ## Required verification
 
 - After making Editor or project changes, wait until compilation and domain reloads finish and confirm `editor_status` is ready.
-- Make sure the Meta XR Simulator is activated
+- Always activate the Meta XR Simulator BEFORE entering Play Mode — playing without the active runtime renders a garbage Game view (camera inside geometry) and yields false results. Activation is a GUI action outside automation reach, so: 1) confirm the sim app is running (`pgrep -af MetaXRSimulator`), 2) if it is not running or a previous Game capture came back corrupted, STOP and ask the user to launch it and press **Meta > Meta XR Simulator > Activate** (or the Play-button icon) — do not run Play verification until they confirm, 3) after `editor_play`, sanity-check the first Game screenshot before trusting any result.
 - Check the Unity console for errors with `unity command get_console_logs --severity Error --limit 100`.
 - Capture the Game view through Pipeline, for example:
  `unity command screenshot --view game --output <absolute-workspace-path>.png --width 1280 --height 720`
@@ -37,3 +37,11 @@
 - Use dry-run and confirmation parameters when exposed by destructive Pipeline commands.
 - Preserve existing scenes and assets unless the task explicitly requires changing or deleting them.
 - Store generated verification artifacts under the project workspace, preferably `Temp/`, unless the user requests another location.
+
+## Editor stability (learned 2026-09-02)
+
+- The Editor has hung on Play Mode teardown while connected to the external XR Simulator runtime (watchdog kill: `Mono process hang detected` in `Logs/Editor-prev.log`, no native crash report). Treat any `editor_stop` timeout or unreachable Pipeline server after Play as a suspected hang: wait, check `unity pipeline list`, and inspect `Logs/Editor-prev.log` before assuming a crash.
+- Never trigger a script recompile while in Play Mode — stop Play first, then edit/recompile, then play. Recompile-during-Play preceded every hang observed.
+- Save the scene with `unity command save_scene` BEFORE entering Play Mode or running tests. A watchdog kill loses unsaved in-memory scene state (test/scene reloads also discard it).
+- Prefer filtered `run_tests` (`--filter`) over the full PlayMode suite; every full run costs domain reloads under a live XR session.
+- Revert Editor-side collateral after Play/test cycles if it appears unprompted (`Assets/Resources/PerformanceTestRun*.json*` deletions, `Assets/Settings/*` or `ProjectSettings/*` churn, `Assets/_Recovery/`).

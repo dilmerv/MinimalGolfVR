@@ -49,6 +49,14 @@ namespace MinimalGolf
 #if UNITY_EDITOR
                 if (!Application.isPlaying) return true; // always show in edit mode for gizmo preview
 #endif
+                // Hand parity: a fist with the same-side tracked hand counts as grip held,
+                // mirroring controller grip-reveal. Either hand works via its own club volume.
+                try
+                {
+                    var club = Club;
+                    if (club != null && club.IsHandFist()) return true;
+                }
+                catch { }
                 var ctrl = Controller;
                 try
                 {
@@ -75,12 +83,21 @@ namespace MinimalGolf
 
         public bool IsRevealActive => enabledReveal && (!requireGrip || IsGripHeld) && gameObject.activeInHierarchy && enabled;
 
-        private OVRInput.Controller Controller
+        private VRGolfClub Club
         {
             get
             {
                 if (_parentClub == null) _parentClub = GetComponentInParent<VRGolfClub>();
-                if (_parentClub != null) return _parentClub.controller;
+                return _parentClub;
+            }
+        }
+
+        private OVRInput.Controller Controller
+        {
+            get
+            {
+                var club = Club;
+                if (club != null) return club.controller;
                 // Infer from hierarchy name if no club found
                 if (transform.parent != null && transform.parent.parent != null)
                 {
@@ -92,7 +109,24 @@ namespace MinimalGolf
             }
         }
 
-        public Vector3 WorldCenter => transform.position;
+        /// <summary>
+        /// Reveal origin: the tracked hand's palm center when available (fist or not —
+        /// activation is gated separately by <see cref="IsRevealActive"/>), otherwise the
+        /// club tip, preserving existing controller behavior.
+        /// </summary>
+        public Vector3 WorldCenter
+        {
+            get
+            {
+                try
+                {
+                    var club = Club;
+                    if (club != null && club.TryGetHandCenter(out Vector3 palm)) return palm;
+                }
+                catch { }
+                return transform.position;
+            }
+        }
         public float WorldRadius => Mathf.Max(0.01f, revealRadius * Mathf.Max(transform.lossyScale.x, Mathf.Max(transform.lossyScale.y, transform.lossyScale.z)));
         // Use explicit radius field primarily; keep scale=1 for predictability.
         public float EffectiveRadius => Mathf.Max(0.01f, revealRadius);
@@ -106,6 +140,29 @@ namespace MinimalGolf
         private void OnDisable()
         {
             RevealVolumeManager.Unregister(this);
+        }
+
+        private void LateUpdate()
+        {
+            // One volume per side, no runtime reparenting: when the same-side hand is
+            // tracked, this transform rides the palm in world space; otherwise it docks
+            // back at the club tip (local zero). Either way the effect stays centered
+            // where the user is reaching, matching WorldCenter below.
+            try
+            {
+                var club = Club;
+                if (club != null && club.TryGetHandCenter(out Vector3 palm))
+                {
+                    transform.position = palm;
+                    return;
+                }
+            }
+            catch { }
+            if (transform.parent != null)
+            {
+                if (transform.localPosition != Vector3.zero) transform.localPosition = Vector3.zero;
+                if (transform.localRotation != Quaternion.identity) transform.localRotation = Quaternion.identity;
+            }
         }
 
         private void OnValidate()

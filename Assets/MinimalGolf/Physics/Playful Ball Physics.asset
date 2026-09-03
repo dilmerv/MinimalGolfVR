@@ -8,8 +8,8 @@ PhysicsMaterial:
   m_PrefabAsset: {fileID: 0}
   m_Name: Playful Ball Physics
   serializedVersion: 2
-  m_DynamicFriction: 0.01
-  m_StaticFriction: 0.01
-  m_Bounciness: 0.2
+  m_DynamicFriction: 0
+  m_StaticFriction: 0
+  m_Bounciness: 0.8
   m_FrictionCombine: 0
   m_BounceCombine: 0

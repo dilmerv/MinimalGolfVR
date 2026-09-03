@@ -67,5 +67,5 @@
         "*.sln": "*.csproj",
         "*.slnx": "*.csproj"
     },
-    "dotnet.defaultSolution": "MinimalGolfVR.slnx"
+    "dotnet.defaultSolution": "MinimalisticGolf.slnx"
 }
